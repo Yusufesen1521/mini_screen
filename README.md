@@ -10,8 +10,10 @@ bolgesel guncelleme.
 - Lockerbox 3.2" TFT SPI, ILI9341, 240x320, v1.0
 - Breadboard ve erkek-erkek jumper kablolar
 
-Panelde dokunmatik yok. Modulun uzerindeki T_IRQ, T_DO, T_DIN, T_CS, T_CLK
-pinleri bos birakilir, kodda da kullanilmaz.
+Modulun poseti "touch: no" diyor ama urun sayfasinda dokunmatik oldugu
+yaziyordu. Bu belirsizligi cozmek icin XPT2046 hatlari bagli ve firmware
+dokunmayi raporluyor. Panel yoksa hicbir dokunma raporlanmaz, ekranin geri
+kalani etkilenmez.
 
 ## Baglanti
 
@@ -25,8 +27,22 @@ pinleri bos birakilir, kodda da kullanilmaz.
 | SDI (MOSI) | 11  |
 | SCK        | 12  |
 | LED        | 21  |
+| SDO (MISO) | 13  |
 
-MISO baglanmaz. `TFT_MISO` bilerek tanimlanmaz, ekrandan geri okuma yapilmaz.
+Dokunmatik (XPT2046) ayni SPI hattini paylasir:
+
+| Ekran pini | ESP32-S3 GPIO | Not |
+|---|---|---|
+| T_CLK | 12 | SCK ile ortak |
+| T_DIN | 11 | SDI/MOSI ile ortak |
+| T_DO  | 13 | SDO/MISO ile ortak |
+| T_CS  | 18 | ayri hat |
+| T_IRQ | yok | TFT_eSPI kullanmiyor, bos birak |
+
+XPT2046 cevabini MISO uzerinden verir, bu yuzden dokunmatik testi icin MISO
+hatti zorunlu. Ekranin kendisi icin gerekli degil; dokunmatik olmadigi kesinlesirse
+`TFT_MISO`, `TOUCH_CS` ve `SPI_TOUCH_FREQUENCY` satirlari silinip GPIO 13 ile 18
+serbest birakilabilir.
 
 Kullanilmayan pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullanilir. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevlidir.
@@ -99,14 +115,40 @@ Acilista once arka isik iki kez kisa kisa yanip soner. Bu, ekran hic goruntu
 vermese bile firmware'in calistigini ve arka isik hattinin saglam oldugunu
 gosteren bir isaret. Sonra:
 
+Ekran yatay kullaniliyor, 320x240.
+
 1. Ustte "MINI SCREEN" basligi ve altinda ince gri ayirici cizgi
-2. Dortlu renk bloklari, yukaridan asagiya: kirmizi, yesil, mavi, beyaz.
-   Her blogun uzerinde kendi adi yazar.
+2. Yan yana dort renk sutunu, soldan saga: kirmizi, yesil, mavi, beyaz.
+   Her sutunun ortasinda kendi adi yazar.
 3. Ekranin dort kosesinde birer sari piksel
-4. Bloklarin altinda gri "COUNTER" etiketi, altinda saniyede bir artan sayi
-5. En altta bos siyah alan
+4. Sutunlarin altinda gri "COUNTER" etiketi, altinda saniyede bir artan sayi
+5. En altta kullanim notu
 
 Seri portta her saniye `sayac=<n>  cizim=<n> us` satiri akar.
+
+## Dokunmatik testi
+
+Kirmizi sutuna dokununca sayac sifirlanir. Her dokunma seri porta da basilir:
+
+```
+dokunma: x=42 y=90 (ham x=520 y=3100 z=1840)
+kirmizi bloga dokunuldu, sayac sifirlandi
+```
+
+Acilista bir kez bosta okunan ham basinc degeri basilir:
+
+```
+Dokunmatik ham Z (bosta): 0, esik 600
+```
+
+Dokunulmadigi halde bu deger surekli 600 ustundeyse hat gurultuludur.
+Dokunuldugu halde hicbir satir gelmiyorsa ya panel yok ya da T_CS / T_DO
+baglantisi eksik.
+
+Koordinatlar TFT_eSPI varsayilan kalibrasyonuyla uretiliyor, birkac piksel
+sapabilir. Kirmizi sutun 80 piksel genis oldugu icin bu test acisindan sorun
+degil. Hassas kullanim gerekirse ham degerlere bakip `tft.setTouch()` ile
+kalibrasyon verilmeli.
 
 ## Beklenen goruntu cikmazsa
 

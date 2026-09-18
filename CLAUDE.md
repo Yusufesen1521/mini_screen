@@ -9,10 +9,13 @@ calistigini kanitlayan minimal test firmware.
 - Lockerbox 3.2" TFT SPI, ILI9341, 240x320, v1.0 (LCDWiki MSP3218 muadili)
 - Breadboard ve erkek-erkek jumper kablolar
 
-Panelde dokunmatik YOK. Modulun uzerindeki T_IRQ, T_DO, T_DIN, T_CS, T_CLK
-pinleri fiziksel olarak var ama panel mevcut degil. Bu pinlere dokunma.
+Dokunmatik durumu belirsiz: posette "touch: no" yaziyor, urun sayfasinda
+dokunmatik oldugu yaziyordu. XPT2046 hatlari bagli ve firmware dokunmayi seri
+porta raporluyor. Panel yoksa hicbir dokunma raporlanmaz, ekranin geri kalani
+etkilenmez. Kesinlesirse TFT_MISO, TOUCH_CS ve SPI_TOUCH_FREQUENCY silinip
+GPIO 13 ile 18 serbest birakilabilir.
 
-MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
+MISO sadece dokunmatik icin bagli. Ekranin kendisinden geri okuma yapilmiyor.
 
 ## Pin haritasi
 
@@ -26,6 +29,12 @@ MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
 | SDI (MOSI) | 11 |
 | SCK | 12 |
 | LED | 21 |
+| SDO (MISO) | 13 |
+| T_CLK | 12 (SCK ile ortak) |
+| T_DIN | 11 (MOSI ile ortak) |
+| T_DO | 13 (MISO ile ortak) |
+| T_CS | 18 |
+| T_IRQ | baglanmiyor |
 
 Kullanilamaz pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullaniliyor. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevli.
@@ -81,12 +90,15 @@ Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
   veya parantez.
 - Kisa ve okunur tut, gereksiz soyutlama katmani ekleme.
 - Arka isik LEDC PWM ile surulur, `digitalWrite` ile degil.
+- Ekran yatay kullaniliyor: `DISPLAY_ROTATION` 1, gorunur olcu 320x240.
+  `pins.h` icindeki SCREEN_WIDTH / SCREEN_HEIGHT donus sonrasi olculerdir,
+  build_flags icindeki TFT_WIDTH / TFT_HEIGHT ise panelin kendi 240x320 olcusu.
+  Ikisini karistirma.
 - LEDC cagrilari `ESP_ARDUINO_VERSION_MAJOR` ile hem core 2.x hem 3.x icin
   korunuyor. Su an core 2.0.17 kullaniliyor.
 
 ## Kapsam disi (istenmedikce ekleme)
 
-- Dokunmatik / XPT2046 kodu, donanimda yok
 - LVGL
 - WiFi, BLE, USB MSC, vendor endpoint
 - Arduino IDE ile ilgili dosya veya talimat

@@ -135,6 +135,12 @@ static const ColorBlock kColorBlocks[BLOCK_COUNT] = {
   { COLOR_BLOCK_WHITE, COLOR_BACKGROUND, "WHITE" },
 };
 
+// Blogun sol ust kosesinin x degeri. Bloklar yan yana dizili.
+static int16_t blockX(uint8_t index)
+{
+  return BLOCK_FIRST_X + index * BLOCK_WIDTH;
+}
+
 static void drawCornerMarks()
 {
   const int16_t x[CORNER_MARK_COUNT] = { 0, SCREEN_WIDTH - 1, 0, SCREEN_WIDTH - 1 };
@@ -156,14 +162,14 @@ static void drawTestScreen()
   tft.drawFastHLine(0, TITLE_AREA_HEIGHT - 1, SCREEN_WIDTH, COLOR_SEPARATOR);
 
   // Renk bloklari
-  tft.setTextDatum(ML_DATUM);
+  tft.setTextDatum(MC_DATUM);
   for (uint8_t i = 0; i < BLOCK_COUNT; i++) {
-    const int16_t blockY = BLOCK_FIRST_Y + i * BLOCK_HEIGHT;
-    tft.fillRect(BLOCK_X, blockY, BLOCK_WIDTH, BLOCK_HEIGHT, kColorBlocks[i].color);
+    const int16_t x = blockX(i);
+    tft.fillRect(x, BLOCK_Y, BLOCK_WIDTH, BLOCK_HEIGHT, kColorBlocks[i].color);
     tft.setTextColor(kColorBlocks[i].labelColor, kColorBlocks[i].color);
     tft.drawString(kColorBlocks[i].label,
-                   BLOCK_X + BLOCK_LABEL_INSET,
-                   blockY + BLOCK_HEIGHT / 2,
+                   x + BLOCK_WIDTH / 2,
+                   BLOCK_Y + BLOCK_HEIGHT / 2,
                    FONT_LABEL);
   }
 
@@ -171,6 +177,7 @@ static void drawTestScreen()
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(COLOR_DIM_TEXT, COLOR_BACKGROUND);
   tft.drawString(COUNTER_LABEL, COUNTER_LABEL_X, COUNTER_LABEL_Y, FONT_LABEL);
+  tft.drawString(HINT_TEXT, HINT_X, HINT_Y, FONT_LABEL);
 
   drawCornerMarks();
 }
@@ -217,6 +224,48 @@ static uint32_t drawCounter(uint32_t value)
 }
 
 // ---------------------------------------------------------------------------
+// Dokunmatik (XPT2046)
+//
+// Panel olup olmadigini test etmek icin. Dokunmatik cam yoksa getTouch() hicbir
+// zaman true donmez ve buradaki hicbir sey calismaz, ekranin geri kalani
+// etkilenmez.
+// ---------------------------------------------------------------------------
+
+static bool touchWasDown = false;
+
+static bool isInsideBlock(uint8_t index, uint16_t x, uint16_t y)
+{
+  const int16_t left = blockX(index);
+  return ((int16_t)x >= left) && ((int16_t)x < left + BLOCK_WIDTH) &&
+         ((int16_t)y >= BLOCK_Y) && ((int16_t)y < BLOCK_Y + BLOCK_HEIGHT);
+}
+
+static void pollTouch()
+{
+  uint16_t x = 0;
+  uint16_t y = 0;
+  const bool down = (tft.getTouch(&x, &y, TOUCH_Z_THRESHOLD) != 0);
+
+  // Sadece basma anini isle, parmak basili kaldikca tekrarlama.
+  if (down && !touchWasDown) {
+    uint16_t rawX = 0;
+    uint16_t rawY = 0;
+    tft.getTouchRaw(&rawX, &rawY);
+    logPrintf("dokunma: x=%u y=%u (ham x=%u y=%u z=%u)\n",
+              x, y, rawX, rawY, tft.getTouchRawZ());
+
+    if (isInsideBlock(BLOCK_INDEX_RED, x, y)) {
+      counterValue = 0;
+      drawCounter(counterValue);
+      lastTickMs = millis();
+      logPrintf("kirmizi bloga dokunuldu, sayac sifirlandi\n");
+    }
+  }
+
+  touchWasDown = down;
+}
+
+// ---------------------------------------------------------------------------
 
 void setup()
 {
@@ -234,6 +283,16 @@ void setup()
   tft.setRotation(DISPLAY_ROTATION);
   logPrintf("tft.init() tamam, %dx%d\n", tft.width(), tft.height());
 
+  if (tft.width() != SCREEN_WIDTH || tft.height() != SCREEN_HEIGHT) {
+    logPrintf("UYARI: pins.h olculeri (%dx%d) donusle uyusmuyor.\n",
+              SCREEN_WIDTH, SCREEN_HEIGHT);
+  }
+
+  // Dokunmatik var mi: parmak degmeden okunan ham basinc degeri. Panel yoksa
+  // ya da T_DO baglanmadiysa bu deger esigin altinda kalir.
+  logPrintf("Dokunmatik ham Z (bosta): %u, esik %u\n",
+            tft.getTouchRawZ(), (unsigned)TOUCH_Z_THRESHOLD);
+
   drawTestScreen();
   counterRegionBegin();
 
@@ -245,6 +304,8 @@ void setup()
 
 void loop()
 {
+  pollTouch();
+
   const uint32_t now = millis();
   if ((now - lastTickMs) < COUNTER_INTERVAL_MS) {
     return;

@@ -2,10 +2,10 @@
 //
 // Donanim: ESP32-S3 DevKitC-1 (N16R8) + Lockerbox 3.2" ILI9341 240x320
 //
-// Ekran veri pinleri TFT_eSPI icin platformio.ini build_flags icinde
-// tanimlanir (TFT_CS, TFT_RST, TFT_DC, TFT_MOSI, TFT_SCLK). Kutuphane bu
-// makrolari derleme aninda gormek zorunda oldugu icin tek kaynak orasidir.
-// Burada sadece okunur isimlerle yeniden yayinlaniyorlar, deger tekrari yok.
+// Ekran ve dokunmatik pinleri TFT_eSPI icin platformio.ini build_flags icinde
+// tanimlanir (TFT_CS, TFT_RST, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_MISO,
+// TOUCH_CS). Kutuphane bu makrolari derleme aninda gormek zorunda oldugu icin
+// tek kaynak orasidir. Burada sadece okunur isimlerle yeniden yayinlaniyorlar.
 
 #pragma once
 
@@ -19,6 +19,10 @@
 #error "TFT pin tanimlari eksik. platformio.ini icindeki build_flags kontrol edilmeli."
 #endif
 
+#if !defined(TFT_MISO) || !defined(TOUCH_CS)
+#error "Dokunmatik icin TFT_MISO ve TOUCH_CS gerekli. XPT2046 cevabini MISO uzerinden verir."
+#endif
+
 // TFT_eSPI 2.5.43, ESP32-S3'te port secilmemisse SPI_PORT degerini FSPI (= 0)
 // yapiyor; REG_SPI_BASE(0) sifir donduruyor ve kutuphane tft.init() icinde
 // 0x10 adresine yazarak StoreProhibited ile cokuyor. Bu yuzden port secimi
@@ -30,12 +34,16 @@
 // ---------------------------------------------------------------------------
 // Pinler
 // ---------------------------------------------------------------------------
-// Ekran SPI (MISO bagli degil, tanimlanmiyor)
+// Ekran SPI
 #define PIN_TFT_CS    TFT_CS    // GPIO 10
 #define PIN_TFT_RST   TFT_RST   // GPIO 9
 #define PIN_TFT_DC    TFT_DC    // GPIO 14
-#define PIN_TFT_MOSI  TFT_MOSI  // GPIO 11
-#define PIN_TFT_SCLK  TFT_SCLK  // GPIO 12
+#define PIN_TFT_MOSI  TFT_MOSI  // GPIO 11, ekran SDI ve dokunmatik T_DIN ortak
+#define PIN_TFT_SCLK  TFT_SCLK  // GPIO 12, ekran SCK ve dokunmatik T_CLK ortak
+#define PIN_TFT_MISO  TFT_MISO  // GPIO 13, dokunmatik T_DO
+
+// Dokunmatik (XPT2046). T_IRQ baglanmiyor, TFT_eSPI kullanmiyor.
+#define PIN_TOUCH_CS  TOUCH_CS  // GPIO 18
 
 // Arka isik. TFT_eSPI'ye birakilmadi, LEDC ile PWM surulyor.
 #define PIN_TFT_BL    21
@@ -50,7 +58,7 @@
 #define BL_BRIGHTNESS_OFF       0
 #define BL_BRIGHTNESS_DEFAULT   200
 
-// Acilis darbesi: ekran hic goruntu vermese bile firmware'in calistigini ve
+// Acilis darbesi: ekran hic goruntu vermese bile firmware calistigini ve
 // arka isik hattinin saglam oldugunu gozle dogrulamak icin.
 #define BL_HEARTBEAT_PULSES     2
 #define BL_HEARTBEAT_MS         120
@@ -62,11 +70,15 @@
 #define SERIAL_WAIT_MS     1500   // USB CDC hazir olana kadar en fazla bekleme
 
 // ---------------------------------------------------------------------------
-// Ekran yerlesimi (dikey / portrait)
+// Ekran yerlesimi (yatay / landscape)
+//
+// Panelin kendi olculeri 240x320 dikey; bunlar build_flags icindeki
+// TFT_WIDTH / TFT_HEIGHT. Asagidaki degerler DISPLAY_ROTATION uygulandiktan
+// sonraki gorunur olculer.
 // ---------------------------------------------------------------------------
-#define DISPLAY_ROTATION   0
-#define SCREEN_WIDTH       240
-#define SCREEN_HEIGHT      320
+#define DISPLAY_ROTATION   1      // 1 ve 3 yatay, 0 ve 2 dikey
+#define SCREEN_WIDTH       320
+#define SCREEN_HEIGHT      240
 
 #define FONT_TITLE         4
 #define FONT_LABEL         2
@@ -74,31 +86,44 @@
 
 // Baslik seridi
 #define TITLE_Y            6
-#define TITLE_AREA_HEIGHT  36
+#define TITLE_AREA_HEIGHT  34
 #define TITLE_TEXT         "MINI SCREEN"
 
-// Renk bloklari: RGB/BGR sirasinin dogrulugunu gozle kontrol etmek icin
+// Renk bloklari yan yana dort sutun. RGB/BGR sirasinin dogrulugunu gozle
+// kontrol etmek ve dokunmatik icin yeterince buyuk hedef sunmak icin.
 #define BLOCK_COUNT        4
-#define BLOCK_X            0
-#define BLOCK_WIDTH        SCREEN_WIDTH
-#define BLOCK_HEIGHT       40
-#define BLOCK_FIRST_Y      40
-#define BLOCK_LABEL_INSET  8
+#define BLOCK_FIRST_X      0
+#define BLOCK_Y            40
+#define BLOCK_WIDTH        (SCREEN_WIDTH / BLOCK_COUNT)   // 80
+#define BLOCK_HEIGHT       104
+#define BLOCK_INDEX_RED    0      // dokununca sayac sifirlanan blok
 
 // Sayac etiketi (bir kez cizilir, sayac bolgesinin disinda kalir)
 #define COUNTER_LABEL      "COUNTER"
-#define COUNTER_LABEL_X    BLOCK_LABEL_INSET
-#define COUNTER_LABEL_Y    208
+#define COUNTER_LABEL_X    8
+#define COUNTER_LABEL_Y    152
 
 // Sadece bu dikdortgen her saniye guncellenir
 #define COUNTER_X          0
-#define COUNTER_Y          228
+#define COUNTER_Y          172
 #define COUNTER_WIDTH      SCREEN_WIDTH
-#define COUNTER_HEIGHT     44
+#define COUNTER_HEIGHT     48
 #define COUNTER_INTERVAL_MS 1000
+
+// Alttaki bos alana yazilan kullanim notu
+#define HINT_TEXT          "KIRMIZIYA DOKUN: SAYAC SIFIRLANIR"
+#define HINT_X             8
+#define HINT_Y             224
 
 // Kose isaretleri (offset kontrolu icin birer piksel)
 #define CORNER_MARK_COUNT  4
+
+// ---------------------------------------------------------------------------
+// Dokunmatik
+// ---------------------------------------------------------------------------
+// TFT_eSPI getTouch() varsayilan basinc esigi. Panel yoksa bu esik hicbir
+// zaman asilmaz ve hicbir dokunma raporlanmaz.
+#define TOUCH_Z_THRESHOLD  600
 
 // ---------------------------------------------------------------------------
 // Renkler (RGB565)
