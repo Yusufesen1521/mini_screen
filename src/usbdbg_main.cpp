@@ -15,6 +15,7 @@
 #include <TFT_eSPI.h>
 #include <driver/usb_serial_jtag.h>
 #include <hal/usb_serial_jtag_ll.h>
+#include <soc/usb_serial_jtag_struct.h>
 #include <stdarg.h>
 
 #include "backlight.h"
@@ -63,6 +64,7 @@ static uint32_t rxTotal = 0;
 static uint32_t txCalls = 0;
 static int      lastTx = 0;
 static int      lastRx = 0;
+static int      txEverWritable = 0;
 
 void setup()
 {
@@ -81,17 +83,27 @@ void setup()
   backlightSet(BL_BRIGHTNESS_DEFAULT);
 
   dbgLine("CDC_ON_BOOT = %d", (int)ARDUINO_USB_CDC_ON_BOOT);
+  dbgLine("basta txfifo:%d pad:%d pull:%d",
+          usb_serial_jtag_ll_txfifo_writable(),
+          (int)USB_SERIAL_JTAG.conf0.usb_pad_enable,
+          (int)USB_SERIAL_JTAG.conf0.dp_pullup);
 
-  // 1. Cevre birimi saatli mi? Saat kapaliyken txfifo yazilabilir
-  //    gorunmemeli.
-  dbgLine("install oncesi txfifo: %d", usb_serial_jtag_ll_txfifo_writable());
-
-  // 2. Saati acikca ac. Hipotez buysa fark burada gorulecek.
+  // PHY ve pad yapilandirmasi. ESP-IDF surucusu bunu yapmiyor, konsolun
+  // zaten yaptigini varsayiyor. CDC_ON_BOOT=1 iken Arduino'nun HWCDC
+  // surucusu yapiyordu (HWCDC.cpp:336-343); 0 yapinca kimse yapmiyor.
   usb_serial_jtag_ll_enable_bus_clock(true);
-  dbgLine("bus clock acildi");
-  dbgLine("clock sonrasi txfifo: %d", usb_serial_jtag_ll_txfifo_writable());
+  USB_SERIAL_JTAG.conf0.phy_sel = 0;           // dahili PHY
+  USB_SERIAL_JTAG.conf0.pad_pull_override = 0;
+  USB_SERIAL_JTAG.conf0.dp_pullup = 1;
+  USB_SERIAL_JTAG.conf0.usb_pad_enable = 1;
 
-  // 3. Surucuyu kur
+  dbgLine("PHY kuruldu");
+  dbgLine("sonra txfifo:%d pad:%d pull:%d",
+          usb_serial_jtag_ll_txfifo_writable(),
+          (int)USB_SERIAL_JTAG.conf0.usb_pad_enable,
+          (int)USB_SERIAL_JTAG.conf0.dp_pullup);
+
+  // Surucuyu kur
   usb_serial_jtag_driver_config_t cfg = {
     .tx_buffer_size = CDC_TX_BUFFER_SIZE,
     .rx_buffer_size = CDC_RX_BUFFER_SIZE,
@@ -101,8 +113,6 @@ void setup()
   dbgLine("  %s", esp_err_to_name(err));
   dbgLine("rx tampon %u  tx %u",
           (unsigned)CDC_RX_BUFFER_SIZE, (unsigned)CDC_TX_BUFFER_SIZE);
-  dbgLine("");
-  dbgLine("PC bayt gonderince rx artmali");
 }
 
 void loop()
@@ -122,12 +132,16 @@ void loop()
     lastTick = millis();
     ticks++;
 
+    if (usb_serial_jtag_ll_txfifo_writable()) {
+      txEverWritable = 1;
+    }
+
     char l1[64];
     char l2[64];
-    snprintf(l1, sizeof(l1), "tick %lu   rx %lu   son rx %d",
+    snprintf(l1, sizeof(l1), "tick %lu  rx %lu  son rx %d",
              (unsigned long)ticks, (unsigned long)rxTotal, lastRx);
-    snprintf(l2, sizeof(l2), "tx cagri %lu   son donus %d",
-             (unsigned long)txCalls, lastTx);
+    snprintf(l2, sizeof(l2), "tx %lu donus %d  txfifo gordu %d",
+             (unsigned long)txCalls, lastTx, txEverWritable);
     dbgStatus(l1, l2);
 
     // Saniyede bir kendiliginden de yazmayi dene

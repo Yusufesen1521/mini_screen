@@ -202,3 +202,68 @@ Faz 1 bu haliyle kapatilamaz. Iki isin de yapilmasi gerekiyor:
 2. **Protokole akis kontrolu eklenmeli.** Hangi surucu kullanilirsa
    kullanilsin, "USB geri basinc saglar" varsayimina guvenilemeyecegi
    olculdu. Kredi tabanli bir pencere gerekli.
+
+### IDF surucusu: ekran uzerinden tanilama sonuclari
+
+Tani ciktisi panele basildi (`src/usbdbg_main.cpp`, `env:usbdbg`), cunku log
+hatti UART0 uzerinde ve tek kabloyla calisirken orasi bagli degil.
+
+Ekranda okunanlar:
+
+```
+CDC_ON_BOOT = 0
+install oncesi txfifo: 0
+bus clock acildi
+clock sonrasi txfifo: 0
+install = 0   ESP_OK
+tick 207   rx 0   son rx 0
+tx cagri 103   son donus 14
+```
+
+Yorumu:
+
+- `install = ESP_OK`, yani surucu kuruluyor
+- `son donus 14`, yani `usb_serial_jtag_write_bytes` veriyi halka tampona
+  kabul ediyor
+- `rx 0`, yani tek bayt okunmuyor
+- `txfifo` hicbir noktada yazilabilir olmuyor
+- `tick` artiyor, firmware canli
+
+Sonuc: surucu kuruluyor ama donanimla konusmuyor.
+
+`HWCDC::begin()` okunarak eksik olan sey bulundu (HWCDC.cpp:336-343):
+kutuphane surucuyu kurmadan once PHY ve pad yapilandirmasini yapiyor.
+
+```c
+USB_SERIAL_JTAG.conf0.phy_sel = 0;
+USB_SERIAL_JTAG.conf0.pad_pull_override = 0;
+USB_SERIAL_JTAG.conf0.dp_pullup = 1;
+USB_SERIAL_JTAG.conf0.usb_pad_enable = 1;
+```
+
+ESP-IDF'in `usb_serial_jtag_driver_install` fonksiyonu bunu yapmiyor,
+konsolun zaten yaptigini varsayiyor. Ayni dort satir eklenip tekrar
+denendi: **degismedi**, cihaz yine sessiz.
+
+### Karar: IDF surucusu kovalanmayacak
+
+Kazanc ile maliyet orantisiz hale geldi. Her deneme bir yukleme turu ve
+kullanicinin ekrani okumasini gerektiriyor, buna karsilik kazanc yaklasik
+5 kat bant genisligi; oysa asil sorun hiz degil kayip ve kayip protokol
+seviyesinde cozulebilir.
+
+Mevcut tavanin urun icin yeterli olup olmadigi:
+
+| Icerik | Sikisma | Kare basina | 0.2 MB/s ile |
+|---|---|---|---|
+| arayuz | 21x | 7.3 KB | yaklasik 27 FPS |
+| albüm kapagi (JPEG olarak) | - | 15-25 KB | yaklasik 0.1 s |
+| GIF | - | cihaz flashinde | USB kullanmiyor |
+
+Masaustu panosu icin yeterli. Denenmemis tek secenek TinyUSB CDC
+(`ARDUINO_USB_MODE=0`), ama o USB-OTG cevre birimini kullaniyor ve tek
+kabloyla yukleme akisini zorlastiriyor; her yuklemede elle BOOT+RESET
+gerekebilir.
+
+Yeniden acilma sarti: bir faz gercekten 0.2 MB/s ustu istemeye baslarsa, ya
+da PCB asamasinda ikinci bir hat eklenirse.
