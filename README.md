@@ -10,10 +10,7 @@ bolgesel guncelleme.
 - Lockerbox 3.2" TFT SPI, ILI9341, 240x320, v1.0
 - Breadboard ve erkek-erkek jumper kablolar
 
-Modulun poseti "touch: no" diyor ama urun sayfasinda dokunmatik oldugu
-yaziyordu. Bu belirsizligi cozmek icin XPT2046 hatlari bagli ve firmware
-dokunmayi raporluyor. Panel yoksa hicbir dokunma raporlanmaz, ekranin geri
-kalani etkilenmez.
+Panelde dokunmatik yok, olculerek dogrulandi. Ayrintisi asagida.
 
 ## Baglanti
 
@@ -27,22 +24,10 @@ kalani etkilenmez.
 | SDI (MOSI) | 11  |
 | SCK        | 12  |
 | LED        | 21  |
-| SDO (MISO) | 13  |
 
-Dokunmatik (XPT2046) ayni SPI hattini paylasir:
+MISO baglanmaz, `TFT_MISO` tanimlanmaz. Ekrandan geri okuma yapilmiyor.
 
-| Ekran pini | ESP32-S3 GPIO | Not |
-|---|---|---|
-| T_CLK | 12 | SCK ile ortak |
-| T_DIN | 11 | SDI/MOSI ile ortak |
-| T_DO  | 13 | SDO/MISO ile ortak |
-| T_CS  | 18 | ayri hat |
-| T_IRQ | yok | TFT_eSPI kullanmiyor, bos birak |
-
-XPT2046 cevabini MISO uzerinden verir, bu yuzden dokunmatik testi icin MISO
-hatti zorunlu. Ekranin kendisi icin gerekli degil; dokunmatik olmadigi kesinlesirse
-`TFT_MISO`, `TOUCH_CS` ve `SPI_TOUCH_FREQUENCY` satirlari silinip GPIO 13 ile 18
-serbest birakilabilir.
+Modulun uzerindeki T_IRQ, T_DO, T_DIN, T_CS, T_CLK pinleri bos birakilir.
 
 Kullanilmayan pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullanilir. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevlidir.
@@ -65,6 +50,12 @@ Kartta iki USB portu var. `ARDUINO_USB_CDC_ON_BOOT=1` oldugu icin Arduino
 tarafindaki `Serial` nesnesi yerlesik USB portuna (GPIO 19/20) baglanir, UART
 kopru portuna degil. Bu yuzden log ayni anda `Serial0` (UART0, TX/RX pinleri)
 uzerine de basiliyor. Hangi porta takili olursan ol cikti gorunur.
+
+Derleme sirasinda TFT_eSPI su uyariyi verir, beklenen durumdur:
+
+```
+#warning >>>>------>> TOUCH_CS pin not defined, TFT_eSPI touch functions will not be available!
+```
 
 ## Yapilandirma notlari
 
@@ -90,10 +81,19 @@ uzerinden gider.
 `include/pins.h` icinde bu ikisinden biri tanimli degilse derleme `#error` ile
 durur, ayar kazara silinirse tekrar ayni cokmeyi yasamamak icin.
 
-Pin ve yerlesim sabitleri `include/pins.h` icinde. Ekranin veri pinleri
-TFT_eSPI tarafindan derleme aninda goruldugu icin sayisal degerleri
-`platformio.ini` icinde tanimli, `pins.h` bunlari okunur isimlerle yeniden
-yayinlar ve eksik olmalari durumunda derlemeyi `#error` ile durdurur.
+### Ekran yonu
+
+Ekran yatay kullaniliyor, gorunur olcu 320x240. Yon `include/pins.h` icindeki
+`DISPLAY_ROTATION` ile ayarlanir:
+
+- 1 ve 3 yatay, aralarinda 180 derece fark var
+- 0 ve 2 dikey
+
+Su anki deger 3. `SCREEN_WIDTH` ve `SCREEN_HEIGHT` donus sonrasi olculerdir;
+`build_flags` icindeki `TFT_WIDTH` / `TFT_HEIGHT` ise panelin kendi 240x320
+olcusudur, degistirilmez. Dikeye gecersen `SCREEN_WIDTH` ve `SCREEN_HEIGHT`
+degerlerini de takas etmen ve yerlesim sabitlerini gozden gecirmen gerekir;
+uyusmazlik olursa firmware acilista seri porta uyari basar.
 
 ### SPI hizi
 
@@ -112,43 +112,32 @@ ve `20000000` dene. Kablolari kisaltmak da ayni sorunu cozer.
 ## Ekranda ne gorunmeli
 
 Acilista once arka isik iki kez kisa kisa yanip soner. Bu, ekran hic goruntu
-vermese bile firmware'in calistigini ve arka isik hattinin saglam oldugunu
-gosteren bir isaret. Sonra:
-
-Ekran yatay kullaniliyor, 320x240.
+vermese bile firmware calistigini ve arka isik hattinin saglam oldugunu
+gosteren bir isaret. Sonra, yatay 320x240 alanda:
 
 1. Ustte "MINI SCREEN" basligi ve altinda ince gri ayirici cizgi
 2. Yan yana dort renk sutunu, soldan saga: kirmizi, yesil, mavi, beyaz.
    Her sutunun ortasinda kendi adi yazar.
 3. Ekranin dort kosesinde birer sari piksel
 4. Sutunlarin altinda gri "COUNTER" etiketi, altinda saniyede bir artan sayi
-5. En altta kullanim notu
+5. En altta bos siyah alan
 
-Seri portta her saniye `sayac=<n>  cizim=<n> us` satiri akar.
-
-## Dokunmatik testi
-
-Kirmizi sutuna dokununca sayac sifirlanir. Her dokunma seri porta da basilir:
+Seri portta acilis bilgisi, ardindan her saniye bir satir:
 
 ```
-dokunma: x=42 y=90 (ham x=520 y=3100 z=1840)
-kirmizi bloga dokunuldu, sayac sifirlandi
+=== mini_screen ===
+Chip      : ESP32-S3 rev 0, 2 core
+Flash     : 16777216 bayt
+PSRAM     : bulundu, 8386279 bayt (bos 8386035 bayt)
+SPI hizi  : 40000000 Hz
+SPI portu : 2
+tft.init() tamam, 320x240
+Ekran hazir.
+sayac=1  cizim=7197 us
 ```
 
-Acilista bir kez bosta okunan ham basinc degeri basilir:
-
-```
-Dokunmatik ham Z (bosta): 0, esik 600
-```
-
-Dokunulmadigi halde bu deger surekli 600 ustundeyse hat gurultuludur.
-Dokunuldugu halde hicbir satir gelmiyorsa ya panel yok ya da T_CS / T_DO
-baglantisi eksik.
-
-Koordinatlar TFT_eSPI varsayilan kalibrasyonuyla uretiliyor, birkac piksel
-sapabilir. Kirmizi sutun 80 piksel genis oldugu icin bu test acisindan sorun
-degil. Hassas kullanim gerekirse ham degerlere bakip `tft.setTouch()` ile
-kalibrasyon verilmeli.
+Cizim suresi 320x48 piksellik sayac bolgesi icin yaklasik 7.1 ms. Teorik deger
+320 x 48 x 16 bit / 40 MHz = 6.1 ms, yani SPI gercekten 40 MHz calisiyor.
 
 ## Beklenen goruntu cikmazsa
 
@@ -177,16 +166,34 @@ sorun veri hattinda.
 
 6. Karlanma, kayan satirlar, rastgele pikseller: SPI hizini `[display]`
    altinda 27 MHz, sonra 20 MHz yap. Kablolari kisalt.
-7. Renkler yanlis (kirmizi blogun uzerinde "BLUE" yaziyor gibi): RGB/BGR sirasi
-   ters demektir, `build_flags` icine `-DTFT_RGB_ORDER=TFT_RGB` ekle.
+7. Renkler yanlis (kirmizi sutunun uzerinde "BLUE" yaziyor gibi): RGB/BGR
+   sirasi ters demektir, `build_flags` icine `-DTFT_RGB_ORDER=TFT_RGB` ekle.
 8. Goruntu kaymis, kenarda ince bir serit var: kose pikselleri tam koselerde
    degilse offset sorunu vardir, `-DTFT_WIDTH` / `-DTFT_HEIGHT` degerlerini ve
    surucu tanimini kontrol et.
-9. Goruntu 90 derece donuk veya aynalanmis: `DISPLAY_ROTATION` degeri
-   `include/pins.h` icinde, 0-3 arasi denenebilir.
+9. Goruntu ters ya da yanlis yonde: `DISPLAY_ROTATION` degerini degistir.
 
 **Seride PSRAM BULUNAMADI yaziyorsa**: `board_build.arduino.memory_type =
 qio_opi` satiri kaybolmustur, bu ayar N16R8 icin sart.
+
+## Dokunmatik: yok, olculerek dogrulandi
+
+Urun sayfasi dokunmatik oldugunu soyluyordu, modulun posetinde ise "touch: no"
+yaziyordu. Belirsizlik su sekilde cozuldu:
+
+1. XPT2046 hatlari gecici olarak baglandi: T_CLK ekranin SCK pinine, T_DIN
+   MOSI pinine, T_DO GPIO 13 (TFT_MISO), T_CS GPIO 18.
+2. `-DTOUCH_CS=18` ve `-DTFT_MISO=13` ile derlendi, firmware her acilista
+   `tft.getTouchRawZ()` degerini seri porta bastı.
+3. Sonuc: hem kablolar takiliyken hem takili degilken deger sabit **0**.
+   Denetleyici olsaydi en azindan gurultu okunurdu. Ekrana dokunmak da hicbir
+   sey uretmedi.
+
+Yani modulde XPT2046 denetleyici veya dokunmatik cam yok. Dokunmatik kodu ve
+tanimlari projeden kaldirildi, GPIO 13 ile 18 tekrar serbest.
+
+T_* pinlerinin kesilmesine gerek yok, bagli olmadiklari surece hicbir etkileri
+yok. Kesmek geri donusu olmayan bir islem ve hicbir sey kazandirmaz.
 
 ## Sonraki asamalar
 

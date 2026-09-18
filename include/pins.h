@@ -2,10 +2,10 @@
 //
 // Donanim: ESP32-S3 DevKitC-1 (N16R8) + Lockerbox 3.2" ILI9341 240x320
 //
-// Ekran ve dokunmatik pinleri TFT_eSPI icin platformio.ini build_flags icinde
-// tanimlanir (TFT_CS, TFT_RST, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_MISO,
-// TOUCH_CS). Kutuphane bu makrolari derleme aninda gormek zorunda oldugu icin
-// tek kaynak orasidir. Burada sadece okunur isimlerle yeniden yayinlaniyorlar.
+// Ekran pinleri TFT_eSPI icin platformio.ini build_flags icinde tanimlanir
+// (TFT_CS, TFT_RST, TFT_DC, TFT_MOSI, TFT_SCLK). Kutuphane bu makrolari
+// derleme aninda gormek zorunda oldugu icin tek kaynak orasidir. Burada
+// sadece okunur isimlerle yeniden yayinlaniyorlar.
 
 #pragma once
 
@@ -19,10 +19,6 @@
 #error "TFT pin tanimlari eksik. platformio.ini icindeki build_flags kontrol edilmeli."
 #endif
 
-#if !defined(TFT_MISO) || !defined(TOUCH_CS)
-#error "Dokunmatik icin TFT_MISO ve TOUCH_CS gerekli. XPT2046 cevabini MISO uzerinden verir."
-#endif
-
 // TFT_eSPI 2.5.43, ESP32-S3'te port secilmemisse SPI_PORT degerini FSPI (= 0)
 // yapiyor; REG_SPI_BASE(0) sifir donduruyor ve kutuphane tft.init() icinde
 // 0x10 adresine yazarak StoreProhibited ile cokuyor. Bu yuzden port secimi
@@ -34,16 +30,12 @@
 // ---------------------------------------------------------------------------
 // Pinler
 // ---------------------------------------------------------------------------
-// Ekran SPI
+// Ekran SPI. MISO baglanmiyor, ekrandan geri okuma yapilmiyor.
 #define PIN_TFT_CS    TFT_CS    // GPIO 10
 #define PIN_TFT_RST   TFT_RST   // GPIO 9
 #define PIN_TFT_DC    TFT_DC    // GPIO 14
-#define PIN_TFT_MOSI  TFT_MOSI  // GPIO 11, ekran SDI ve dokunmatik T_DIN ortak
-#define PIN_TFT_SCLK  TFT_SCLK  // GPIO 12, ekran SCK ve dokunmatik T_CLK ortak
-#define PIN_TFT_MISO  TFT_MISO  // GPIO 13, dokunmatik T_DO
-
-// Dokunmatik (XPT2046). T_IRQ baglanmiyor, TFT_eSPI kullanmiyor.
-#define PIN_TOUCH_CS  TOUCH_CS  // GPIO 18
+#define PIN_TFT_MOSI  TFT_MOSI  // GPIO 11
+#define PIN_TFT_SCLK  TFT_SCLK  // GPIO 12
 
 // Arka isik. TFT_eSPI'ye birakilmadi, LEDC ile PWM surulyor.
 #define PIN_TFT_BL    21
@@ -70,13 +62,13 @@
 #define SERIAL_WAIT_MS     1500   // USB CDC hazir olana kadar en fazla bekleme
 
 // ---------------------------------------------------------------------------
-// Ekran yerlesimi (yatay / landscape)
+// Ekran yerlesimi (yatay)
 //
 // Panelin kendi olculeri 240x320 dikey; bunlar build_flags icindeki
 // TFT_WIDTH / TFT_HEIGHT. Asagidaki degerler DISPLAY_ROTATION uygulandiktan
 // sonraki gorunur olculer.
 // ---------------------------------------------------------------------------
-#define DISPLAY_ROTATION   1      // 1 ve 3 yatay, 0 ve 2 dikey
+#define DISPLAY_ROTATION   3      // 1 ve 3 yatay, aralarinda 180 derece fark var
 #define SCREEN_WIDTH       320
 #define SCREEN_HEIGHT      240
 
@@ -90,13 +82,12 @@
 #define TITLE_TEXT         "MINI SCREEN"
 
 // Renk bloklari yan yana dort sutun. RGB/BGR sirasinin dogrulugunu gozle
-// kontrol etmek ve dokunmatik icin yeterince buyuk hedef sunmak icin.
+// kontrol etmek icin.
 #define BLOCK_COUNT        4
 #define BLOCK_FIRST_X      0
 #define BLOCK_Y            40
 #define BLOCK_WIDTH        (SCREEN_WIDTH / BLOCK_COUNT)   // 80
 #define BLOCK_HEIGHT       104
-#define BLOCK_INDEX_RED    0      // dokununca sayac sifirlanan blok
 
 // Sayac etiketi (bir kez cizilir, sayac bolgesinin disinda kalir)
 #define COUNTER_LABEL      "COUNTER"
@@ -110,20 +101,8 @@
 #define COUNTER_HEIGHT     48
 #define COUNTER_INTERVAL_MS 1000
 
-// Alttaki bos alana yazilan kullanim notu
-#define HINT_TEXT          "KIRMIZIYA DOKUN: SAYAC SIFIRLANIR"
-#define HINT_X             8
-#define HINT_Y             224
-
 // Kose isaretleri (offset kontrolu icin birer piksel)
 #define CORNER_MARK_COUNT  4
-
-// ---------------------------------------------------------------------------
-// Dokunmatik
-// ---------------------------------------------------------------------------
-// TFT_eSPI getTouch() varsayilan basinc esigi. Panel yoksa bu esik hicbir
-// zaman asilmaz ve hicbir dokunma raporlanmaz.
-#define TOUCH_Z_THRESHOLD  600
 
 // ---------------------------------------------------------------------------
 // Renkler (RGB565)

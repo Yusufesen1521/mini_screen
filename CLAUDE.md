@@ -9,13 +9,13 @@ calistigini kanitlayan minimal test firmware.
 - Lockerbox 3.2" TFT SPI, ILI9341, 240x320, v1.0 (LCDWiki MSP3218 muadili)
 - Breadboard ve erkek-erkek jumper kablolar
 
-Dokunmatik durumu belirsiz: posette "touch: no" yaziyor, urun sayfasinda
-dokunmatik oldugu yaziyordu. XPT2046 hatlari bagli ve firmware dokunmayi seri
-porta raporluyor. Panel yoksa hicbir dokunma raporlanmaz, ekranin geri kalani
-etkilenmez. Kesinlesirse TFT_MISO, TOUCH_CS ve SPI_TOUCH_FREQUENCY silinip
-GPIO 13 ile 18 serbest birakilabilir.
+**Dokunmatik YOK, olculerek dogrulandi.** Urun sayfasi dokunmatik diyordu,
+poset "touch: no" diyordu. XPT2046 hatlari (T_CS GPIO 18, T_DO GPIO 13)
+gecici olarak baglanip `tft.getTouchRawZ()` okundu: deger hem bagliyken hem
+degilken sabit 0. Denetleyici olsaydi gurultu bile okunurdu. Dokunmatik kodu
+kaldirildi, GPIO 13 ve 18 serbest. Bu konuyu tekrar acma, olculdu.
 
-MISO sadece dokunmatik icin bagli. Ekranin kendisinden geri okuma yapilmiyor.
+MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
 
 ## Pin haritasi
 
@@ -29,15 +29,12 @@ MISO sadece dokunmatik icin bagli. Ekranin kendisinden geri okuma yapilmiyor.
 | SDI (MOSI) | 11 |
 | SCK | 12 |
 | LED | 21 |
-| SDO (MISO) | 13 |
-| T_CLK | 12 (SCK ile ortak) |
-| T_DIN | 11 (MOSI ile ortak) |
-| T_DO | 13 (MISO ile ortak) |
-| T_CS | 18 |
-| T_IRQ | baglanmiyor |
 
 Kullanilamaz pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullaniliyor. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevli.
+
+Bos ve kullanilabilir: GPIO 4, 5, 6, 7, 8, 13, 15, 16, 17, 18 ve saga taraftaki
+1, 2, 35-42, 47, 48. Rotary encoder ve butonlar buradan secilecek.
 
 ## Kritik: USE_FSPI_PORT silinmemeli
 
@@ -58,8 +55,21 @@ Tum TFT_eSPI tanimlari `platformio.ini` icindeki `build_flags` altinda,
 `-DUSER_SETUP_LOADED=1` ile. Kutuphanenin `User_Setup.h` dosyasini ASLA
 degistirme, o dosya `.pio/libdeps` altinda ve kutuphane guncellemesinde silinir.
 
+Derlemede cikan "TOUCH_CS pin not defined" uyarisi beklenen durumdur,
+susturmaya calisma.
+
 SPI hizi tek yerden degistirilir: `platformio.ini` icindeki `[display]` bolumu.
 Breadboard uzerinde 40 MHz kararsiz olabilir, bozulma gorulurse 27 veya 20 MHz.
+
+## Ekran yonu
+
+Yatay kullaniliyor, gorunur olcu 320x240. `DISPLAY_ROTATION` degeri 3.
+1 ve 3 yatay ve aralarinda 180 derece fark var, 0 ve 2 dikey.
+
+`pins.h` icindeki `SCREEN_WIDTH` / `SCREEN_HEIGHT` donus sonrasi olculerdir,
+`build_flags` icindeki `TFT_WIDTH` / `TFT_HEIGHT` ise panelin kendi 240x320
+olcusu. Ikisini karistirma. Yon degisirse yerlesim sabitlerini de gozden
+gecir; uyusmazlik olursa firmware acilista seri porta uyari basar.
 
 ## Seri port
 
@@ -90,15 +100,12 @@ Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
   veya parantez.
 - Kisa ve okunur tut, gereksiz soyutlama katmani ekleme.
 - Arka isik LEDC PWM ile surulur, `digitalWrite` ile degil.
-- Ekran yatay kullaniliyor: `DISPLAY_ROTATION` 1, gorunur olcu 320x240.
-  `pins.h` icindeki SCREEN_WIDTH / SCREEN_HEIGHT donus sonrasi olculerdir,
-  build_flags icindeki TFT_WIDTH / TFT_HEIGHT ise panelin kendi 240x320 olcusu.
-  Ikisini karistirma.
 - LEDC cagrilari `ESP_ARDUINO_VERSION_MAJOR` ile hem core 2.x hem 3.x icin
   korunuyor. Su an core 2.0.17 kullaniliyor.
 
 ## Kapsam disi (istenmedikce ekleme)
 
+- Dokunmatik / XPT2046 kodu, donanimda yok, olculdu
 - LVGL
 - WiFi, BLE, USB MSC, vendor endpoint
 - Arduino IDE ile ilgili dosya veya talimat
