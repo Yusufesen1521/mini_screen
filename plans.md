@@ -30,7 +30,33 @@ API sartlari riski yok.
 Ayar icin cihazin kendi web arayuzu kullanilir. Tek kod, her platform, app
 store yok. BLE sadece iOS bildirimleri (ANCS) icin kullanilacak.
 
-**5. Hava durumu icin anahtarsiz kaynak.**
+**5. Performans hedefi 24 FPS tam kare esdegeri, ve bu hedef karsilandi.**
+Bunun ustune cikmak icin is yapilmayacak. Olculen durum: baglanti
+0.20 MB/s, arayuz iceriginde RLE 21 kat sikistiriyor, yani ekrana ulasan
+efektif piksel hizi 4.2 MB/s. SPI'in olculen tavani 4.40 MB/s. Yani
+baglanti ekranin basabileceginin yuzde 95'ini zaten besliyor; daha hizli
+bir tasima ya da daha iyi bir sikistirma tek kare kazandirmaz.
+
+Ustelik metrigin kendisi yapay: gercek kullanimda tam kare gonderilmiyor,
+sadece degisen widget'in dikdortgeni gidiyor.
+
+**6. Kendi kodegimiz sadece RLE16. Gerisi kutuphane.**
+RLE16 bolge kodegi yazildi (cihazda 50, PC'de 30 satir) ve kalsin: duz
+renkli arayuz iceriginde optimuma yakin, memcpy hizinda cozuluyor, ek RAM
+istemiyor. Genel amacli bir kutuphane (LZ4, Heatshrink) bu is icin daha
+yavas ve daha buyuk olurdu, ustelik fazladan sikistirmanin karsiligi yok.
+
+Fotograf, GIF ve video icin kutuphane kullanilacak, kendi kodek yazilmayacak:
+- GIF: `AnimatedGIF` (bitbank2, Apache 2.0)
+- JPEG: `TJpg_Decoder` (Bodmer, ticari kullanima uygun)
+- Video: MJPEG, yani JPEG dizisi. ESP32-S3'te H.264 cozmek gercekci degil.
+
+**7. SPI hizi 40 MHz.**
+Olculen 4.40 MB/s, teorigin yuzde 88'i. Uzun kullanimda bozulma gorulmedi.
+80 MHz olculdu (7.87 MB/s) ama darbogaz orada olmadigi icin benimsenmedi;
+breadboard uzerinde sinyal butunlugu riskine girmeye degmez.
+
+**8. Hava durumu icin anahtarsiz kaynak.**
 Open-Meteo: kayit yok, anahtar yok, gunde 10 bin cagri. Ileride ticari
 kullanim olursa met.no alternatifi degerlendirilir (yine anahtarsiz, ticari
 kullanima acik, tek sarti tanitici bir User-Agent).

@@ -113,9 +113,16 @@
 // kullandigi 320x80 seritten (51210 bayt) rahatca buyuk.
 #define PROTO_MAX_PAYLOAD       61440
 
-// Ayni anda tamponlanan cerceve sayisi. Tek gorevli alim yapiliyor, bu yuzden
-// 1. Olcum kare kaybi gosterirse artirilacak.
-#define PROTO_RX_SLOTS          1
+// Akis penceresi: PC'nin ayni anda onaysiz birakabilecegi cerceve sayisi.
+//
+// 1 olsaydi her cerceve icin gidis donus beklenirdi ve hiz dusmezdi ama
+// gecikme eklenirdi. 3 ile onceki cerceve ekrana basilirken sonraki yolda
+// olabiliyor, yani gidis donus gizleniyor; buna karsilik cihaz asla
+// isleyebileceginden fazlasini almiyor.
+//
+// Ust sinir alim tamponu: 3 cerceve x tipik sikistirilmis serit, 16 KB'lik
+// CDC tamponunun altinda kaliyor.
+#define PROTO_RX_SLOTS          3
 
 // Cerceve yarim kalirsa bu sure sonunda birakilir
 #define PROTO_FRAME_TIMEOUT_MS  500

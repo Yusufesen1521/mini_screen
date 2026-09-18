@@ -51,15 +51,70 @@ def open_link(port=None):
 
 
 class Link:
-    def __init__(self, ser):
+    def __init__(self, ser, window=1):
         self.ser = ser
         self.parser = P.Parser()
         self.seq = 0
+
+        # Akis kontrolu. Cihaz CAPS ile rx_slots bildiriyor, el sikismadan
+        # sonra buraya yaziliyor. Ayrintisi docs/protocol.md icinde.
+        self.window = window
+        self.pending = []      # onay bekleyen seq listesi
+        self.nacks = 0
+        self.ack_timeouts = 0
 
     def next_seq(self):
         s = self.seq
         self.seq = (self.seq + 1) & 0xFF
         return s
+
+    # -- akis kontrollu gonderim --------------------------------------------
+
+    def send_windowed(self, frame, seq, timeout=2.0):
+        """Pencere dolu ise once yer acar, sonra gonderir."""
+        while len(self.pending) >= self.window:
+            if not self._reap(timeout):
+                self.ack_timeouts += 1
+                self.pending.pop(0)     # bu cerceveden umudu kes, tikanma
+        self.ser.write(frame)
+        self.pending.append(seq)
+
+    def drain(self, timeout=3.0):
+        """Bekleyen butun onaylari topla. Olcum bitiminde cagrilir."""
+        while self.pending:
+            if not self._reap(timeout):
+                self.ack_timeouts += len(self.pending)
+                self.pending.clear()
+                return False
+        return True
+
+    def _reap(self, timeout):
+        """En az bir onay ya da ret gelene kadar bekler."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            n = self.ser.in_waiting
+            data = self.ser.read(n if n else 1)
+            if not data:
+                continue
+            progressed = False
+            for f in self.parser.feed(data):
+                if f["type"] == P.MSG_LOG:
+                    self._print_log(f["payload"])
+                elif f["type"] == P.MSG_ACK:
+                    self._retire(f["seq"])
+                    progressed = True
+                elif f["type"] == P.MSG_NACK:
+                    self.nacks += 1
+                    if len(f["payload"]) >= 2:
+                        self._retire(f["payload"][1])
+                    progressed = True
+            if progressed:
+                return True
+        return False
+
+    def _retire(self, seq):
+        if seq in self.pending:
+            self.pending.remove(seq)
 
     def send(self, msg_type, payload=b"", flags=0, **kw):
         seq = self.next_seq()
@@ -128,6 +183,7 @@ def handshake(link, quiet=False):
         "selftest": p[13],
         "mac": ":".join("%02X" % b for b in p[14:20]),
     }
+    link.window = max(1, info["rx_slots"])
     link.poll(0.4)   # CAPS arkasindan gelen acilis loglari
 
     if not quiet:
@@ -198,15 +254,28 @@ IMAGES = {
 }
 
 
-def send_image(link, px, w, h, force_codec=None):
-    """Tam kareyi seritlere bolerek gonderir. Yazilan bayt sayisini doner."""
-    written = 0
+def build_stripes(px, w, h, force_codec=None):
+    """Tam kareyi serit payload'larina boler. Bir kez hesaplanip tekrar
+    kullanilabilsin diye gonderimden ayrildi."""
+    out = []
     for top in range(0, h, STRIPE_ROWS):
         rows = min(STRIPE_ROWS, h - top)
-        chunk = px[top * w:(top + rows) * w]
-        payload, _codec = P.encode_region(0, top, w, rows, chunk, force_codec)
-        frame = P.build_frame(P.MSG_FRAME_REGION, link.next_seq(), payload)
-        link.send_raw(frame)
+        payload, codec = P.encode_region(0, top, w, rows,
+                                         px[top * w:(top + rows) * w], force_codec)
+        out.append((payload, codec))
+    return out
+
+
+def send_image(link, px, w, h, force_codec=None, stripes=None):
+    """Tam kareyi akis kontrollu gonderir. Yazilan bayt sayisini doner."""
+    if stripes is None:
+        stripes = build_stripes(px, w, h, force_codec)
+
+    written = 0
+    for payload, _codec in stripes:
+        seq = link.next_seq()
+        frame = P.build_frame(P.MSG_FRAME_REGION, seq, payload, P.FLAG_ACK_REQ)
+        link.send_windowed(frame, seq)
         written += len(frame)
     return written
 
@@ -237,31 +306,32 @@ def cmd_bench(args):
     raw_size = w * h * 2
 
     print("Tam kare %dx%d, ham %d bayt, %d kare olculuyor\n" % (w, h, raw_size, args.frames))
-    print("%-10s %-8s %10s %8s %8s %8s" %
-          ("gorsel", "codec", "tel bayt", "sikisma", "MB/s", "FPS"))
-    print("-" * 58)
+    print("%-10s %-8s %10s %8s %8s %8s %7s" %
+          ("gorsel", "codec", "tel bayt", "sikisma", "MB/s", "FPS", "NACK"))
+    print("-" * 66)
 
     for name in ("solid", "ui", "gradient", "noise"):
         px = IMAGES[name](w, h)
+        stripes = build_stripes(px, w, h)
 
         # Isinma
-        send_image(link, px, w, h)
-        link.ser.flush()
+        send_image(link, px, w, h, stripes=stripes)
+        link.drain()
 
+        nacks0 = link.nacks
         start = time.perf_counter()
         total = 0
         for _ in range(args.frames):
-            total += send_image(link, px, w, h)
-        link.ser.flush()
+            total += send_image(link, px, w, h, stripes=stripes)
+        link.drain()            # butun onaylar gelene kadar bekle
         elapsed = time.perf_counter() - start
 
         per_frame = total / args.frames
-        payload, codec = P.encode_region(0, 0, w, min(STRIPE_ROWS, h),
-                                         px[:w * min(STRIPE_ROWS, h)])
-        codec_name = "RLE16" if codec == P.CODEC_RLE16 else "NONE"
-        print("%-10s %-8s %10d %7.1fx %8.2f %8.1f" %
+        codec_name = "RLE16" if stripes[0][1] == P.CODEC_RLE16 else "NONE"
+        print("%-10s %-8s %10d %7.1fx %8.2f %8.1f %7d" %
               (name, codec_name, per_frame, raw_size / per_frame,
-               total / elapsed / 1e6, args.frames / elapsed))
+               total / elapsed / 1e6, args.frames / elapsed,
+               link.nacks - nacks0))
 
     link.send(P.MSG_GET_STATUS)
     st = link.expect(P.MSG_STATUS, timeout=2.0)

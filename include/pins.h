@@ -74,6 +74,16 @@
 #define CDC_TX_BUFFER_SIZE    4096
 #define CDC_WRITE_TIMEOUT_MS  100
 
+// Ekrana basma gorevi. Okuma ile basmanin ortusmesi icin ayri cekirdekte.
+// Arduino loop'u 1. cekirdekte calistigi icin bu 0'a veriliyor.
+#define PUSH_TASK_CORE        0
+#define PUSH_TASK_PRIORITY    2
+#define PUSH_TASK_STACK       4096
+
+// Bos cozme tamponu beklerken en fazla bu kadar beklenir. Asilirsa PC
+// akis penceresini asmis demektir ve OVERRUN dondurulur.
+#define PUSH_WAIT_MS          1000
+
 // ---------------------------------------------------------------------------
 // Ekran yerlesimi (yatay)
 //

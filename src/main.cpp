@@ -31,8 +31,33 @@ static TFT_eSPI tft;
 static Framer framer;
 
 static uint8_t  *payloadBuf = nullptr;   // gelen cerceve payload'i
-static uint16_t *decodeBuf = nullptr;    // RLE cozulmus pikseller
 static uint8_t   rxChunk[RX_CHUNK_SIZE];
+
+// Ekrana basma isi ayri bir cekirdekte.
+//
+// Tek gorevliyken okuma ve basma ardisik oluyordu ve toplam sure ikisinin
+// toplamiydi. Olcum: arayuz iceriginde 36 ms okuma + 35 ms basma = 71 ms,
+// yani 14 FPS. Ayrilinca limit ikisinin buyugu oluyor.
+//
+// Iki cozme tamponu var: biri ekrana basilirken digerine cozuluyor.
+// CODEC_NONE de kopyalaniyor, cunku payload tamponu bir sonraki cerceve
+// tarafindan ezilir.
+#define DECODE_BUF_COUNT  2
+
+struct PushJob {
+  uint16_t *pixels;
+  uint8_t   bufIndex;
+  int32_t   x;
+  int32_t   y;
+  int32_t   w;
+  int32_t   h;
+  uint8_t   seq;
+  bool      ackReq;
+};
+
+static uint16_t     *decodeBuf[DECODE_BUF_COUNT] = {nullptr, nullptr};
+static QueueHandle_t pushQueue = nullptr;   // PushJob
+static QueueHandle_t freeBufs = nullptr;    // uint8_t, bos tampon indeksi
 
 static bool     connected = false;
 static bool     selfTestOk = false;
@@ -41,6 +66,16 @@ static uint32_t lastRegionUs = 0;
 // ---------------------------------------------------------------------------
 // Cerceve gonderme
 // ---------------------------------------------------------------------------
+
+// Gonderim kilidi. Iki cekirdek de cerceve gonderiyor: loop() NACK, CAPS,
+// STATUS ve LOG; pushTask ise ACK. Kilit olmadan iki cerceve birbirinin
+// icine giriyor ve karsi taraf senkron kaybediyor. Olculen sonucu: arada
+// bir ACK kayboluyordu ve PC 2 saniyelik zaman asimina takiliyordu.
+static SemaphoreHandle_t txLock = nullptr;
+
+// Cerceve tek parca halinde gonderilsin diye toplama tamponu. Cihazdan
+// PC'ye giden en buyuk mesaj LOG, o da acilis tamponu kadar.
+static uint8_t txAssemble[LOG_BOOT_BUF_SIZE + PROTO_HDR_SIZE + PROTO_CRC_SIZE];
 
 static void sendFrame(uint8_t type, uint8_t seq, const uint8_t *payload, uint16_t len)
 {
@@ -60,11 +95,28 @@ static void sendFrame(uint8_t type, uint8_t seq, const uint8_t *payload, uint16_
   const uint16_t c = crc16(payload, len);
   const uint8_t tail[PROTO_CRC_SIZE] = { (uint8_t)(c & 0xFF), (uint8_t)(c >> 8) };
 
-  Serial.write(hdr, sizeof(hdr));
-  if (len > 0) {
-    Serial.write(payload, len);
+  if (txLock != nullptr) {
+    xSemaphoreTake(txLock, portMAX_DELAY);
   }
-  Serial.write(tail, sizeof(tail));
+
+  const size_t total = PROTO_HDR_SIZE + len + PROTO_CRC_SIZE;
+  if (total <= sizeof(txAssemble)) {
+    memcpy(txAssemble, hdr, PROTO_HDR_SIZE);
+    if (len > 0) {
+      memcpy(&txAssemble[PROTO_HDR_SIZE], payload, len);
+    }
+    memcpy(&txAssemble[PROTO_HDR_SIZE + len], tail, PROTO_CRC_SIZE);
+    Serial.write(txAssemble, total);
+  } else {
+    // Tamponu asan boy yok ama olursa kilit altinda parcali gonder
+    Serial.write(hdr, sizeof(hdr));
+    Serial.write(payload, len);
+    Serial.write(tail, sizeof(tail));
+  }
+
+  if (txLock != nullptr) {
+    xSemaphoreGive(txLock);
+  }
 }
 
 // Log satirlarini protokol uzerinden gonderir. Boylece UART hatti bagli
@@ -127,7 +179,36 @@ static void sendStatus(uint8_t seq)
 // FRAME_REGION isleme
 // ---------------------------------------------------------------------------
 
-static bool handleRegion(const uint8_t *payload, uint16_t len, uint8_t seq)
+// Ekrana basma gorevi. Kendi cekirdeginde calisir, kuyruktan is alir,
+// basar ve ACK'i kendisi gonderir. ACK basma bittikten sonra gittigi icin
+// PC penceresi cihazin gercek islem hizina baglanmis oluyor.
+static void pushTask(void *arg)
+{
+  (void)arg;
+  PushJob job;
+
+  for (;;) {
+    if (xQueueReceive(pushQueue, &job, portMAX_DELAY) != pdTRUE) {
+      continue;
+    }
+
+    const uint32_t t0 = micros();
+    // Payload little-endian RGB565, panel big-endian bekliyor. Cevrimi
+    // kutuphane yapiyor; olculen maliyeti yuzde 0.2.
+    tft.setSwapBytes(true);
+    tft.pushImage(job.x, job.y, job.w, job.h, job.pixels);
+    lastRegionUs = micros() - t0;
+
+    if (job.ackReq) {
+      const uint8_t p[1] = { job.seq };
+      sendFrame(MSG_ACK, job.seq, p, sizeof(p));
+    }
+
+    xQueueSend(freeBufs, &job.bufIndex, portMAX_DELAY);
+  }
+}
+
+static bool handleRegion(const uint8_t *payload, uint16_t len, uint8_t seq, bool ackReq)
 {
   if (len < REGION_HDR_SIZE) {
     sendNack(ERR_BAD_REGION, seq);
@@ -155,34 +236,43 @@ static bool handleRegion(const uint8_t *payload, uint16_t len, uint8_t seq)
   const uint8_t *data = &payload[REGION_HDR_SIZE];
   const uint16_t dataLen = (uint16_t)(len - REGION_HDR_SIZE);
   const size_t pixels = (size_t)w * h;
-  const uint16_t *src = nullptr;
+
+  // Bos bir cozme tamponu bekle. Akis kontrolu sayesinde normalde hemen
+  // bulunur; bulunamazsa PC pencereyi asmis demektir.
+  uint8_t bufIndex = 0;
+  if (xQueueReceive(freeBufs, &bufIndex, pdMS_TO_TICKS(PUSH_WAIT_MS)) != pdTRUE) {
+    sendNack(ERR_OVERRUN, seq);
+    return false;
+  }
+
+  uint16_t *dst = decodeBuf[bufIndex];
 
   if (codec == CODEC_NONE) {
     if (dataLen != pixels * 2) {
+      xQueueSend(freeBufs, &bufIndex, 0);
       sendNack(ERR_BAD_REGION, seq);
       return false;
     }
-    // payloadBuf hizali ayrildi, REGION_HDR_SIZE cift sayi, yani data da
-    // cift adreste. Kopyalamadan dogrudan gonderilebilir.
-    src = reinterpret_cast<const uint16_t *>(data);
+    memcpy(dst, data, dataLen);
   } else if (codec == CODEC_RLE16) {
-    const int32_t decoded = rle16Decode(data, dataLen, decodeBuf, DECODE_PIXELS);
+    const int32_t decoded = rle16Decode(data, dataLen, dst, DECODE_PIXELS);
     if (decoded < 0 || (size_t)decoded != pixels) {
+      xQueueSend(freeBufs, &bufIndex, 0);
       sendNack(ERR_DECODE_ERROR, seq);
       return false;
     }
-    src = decodeBuf;
   } else {
+    xQueueSend(freeBufs, &bufIndex, 0);
     sendNack(ERR_BAD_CODEC, seq);
     return false;
   }
 
-  const uint32_t t0 = micros();
-  // Payload little-endian RGB565, panel big-endian bekliyor. Cevrimi
-  // kutuphane yapiyor; olculen maliyeti yuzde 0.2.
-  tft.setSwapBytes(true);
-  tft.pushImage((int32_t)x, (int32_t)y, (int32_t)w, (int32_t)h, src);
-  lastRegionUs = micros() - t0;
+  PushJob job = {
+    dst, bufIndex,
+    (int32_t)x, (int32_t)y, (int32_t)w, (int32_t)h,
+    seq, ackReq,
+  };
+  xQueueSend(pushQueue, &job, portMAX_DELAY);
 
   return true;
 }
@@ -211,8 +301,9 @@ static void onFrame(uint8_t type, uint8_t flags, uint8_t seq,
       return;   // CAPS zaten cevap, ayrica ACK gonderme
 
     case MSG_FRAME_REGION:
-      ok = handleRegion(payload, len, seq);
-      break;
+      // ACK'i pushTask gonderiyor, ekrana basma bittikten sonra.
+      handleRegion(payload, len, seq, (flags & PROTO_FLAG_ACK_REQ) != 0);
+      return;
 
     case MSG_SET_BACKLIGHT:
       if (len != 1) {
@@ -228,6 +319,10 @@ static void onFrame(uint8_t type, uint8_t flags, uint8_t seq,
 
     case MSG_GET_STATUS:
       sendStatus(seq);
+      // Bellek sizintisi takibi icin. STATUS duzenini degistirmemek adina
+      // ayri bir LOG satiri olarak gidiyor.
+      logPrintf("heap %u  psram %u\n",
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
       return;
 
     default:
@@ -348,6 +443,7 @@ static bool selfTest()
 
 void setup()
 {
+  txLock = xSemaphoreCreateMutex();
   logBegin();
   crcBegin();
 
@@ -372,16 +468,39 @@ void setup()
   // Tamponlar PSRAM'de. Olcum dahili SRAM ile arasindaki farkin yuzde 2
   // oldugunu gosterdi, SRAM daha degerli bir kaynak.
   payloadBuf = (uint8_t *)heap_caps_malloc(PAYLOAD_CAP, MALLOC_CAP_SPIRAM);
-  decodeBuf = (uint16_t *)heap_caps_malloc(DECODE_PIXELS * 2, MALLOC_CAP_SPIRAM);
 
-  if (payloadBuf == nullptr || decodeBuf == nullptr) {
+  bool buffersOk = (payloadBuf != nullptr);
+  for (uint8_t i = 0; i < DECODE_BUF_COUNT; i++) {
+    decodeBuf[i] = (uint16_t *)heap_caps_malloc(DECODE_PIXELS * 2, MALLOC_CAP_SPIRAM);
+    buffersOk = buffersOk && (decodeBuf[i] != nullptr);
+  }
+
+  pushQueue = xQueueCreate(DECODE_BUF_COUNT, sizeof(PushJob));
+  freeBufs = xQueueCreate(DECODE_BUF_COUNT, sizeof(uint8_t));
+  buffersOk = buffersOk && (pushQueue != nullptr) && (freeBufs != nullptr);
+
+  if (buffersOk) {
+    for (uint8_t i = 0; i < DECODE_BUF_COUNT; i++) {
+      xQueueSend(freeBufs, &i, 0);
+    }
+  }
+
+  if (!buffersOk) {
     logPrintf("HATA: tamponlar ayrilamadi\n");
     while (true) {
       delay(1000);
     }
   }
-  logPrintf("Tamponlar : payload %u bayt, cozme %u bayt (PSRAM)\n",
-            (unsigned)PAYLOAD_CAP, (unsigned)(DECODE_PIXELS * 2));
+  logPrintf("Tamponlar : payload %u bayt, cozme %u x %u bayt (PSRAM)\n",
+            (unsigned)PAYLOAD_CAP, (unsigned)DECODE_BUF_COUNT,
+            (unsigned)(DECODE_PIXELS * 2));
+
+  // Ekrana basma ayri cekirdekte. Arduino loop'u 1. cekirdekte calisiyor,
+  // basma isi 0. cekirdege veriliyor; boylece okuma ve basma ortusuyor.
+  xTaskCreatePinnedToCore(pushTask, "push", PUSH_TASK_STACK, nullptr,
+                          PUSH_TASK_PRIORITY, nullptr, PUSH_TASK_CORE);
+  logPrintf("Basma gorevi: cekirdek %d, pencere %d cerceve\n",
+            (int)PUSH_TASK_CORE, (int)PROTO_RX_SLOTS);
 
   framer.begin(payloadBuf, PAYLOAD_CAP, onFrame, onFramerError, nullptr);
 

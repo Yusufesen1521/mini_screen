@@ -124,7 +124,14 @@ Bunlar karara baglandi, yeniden acilmayacak. Gerekcesi `plans.md` icinde.
    medya oturumundan okunur.** Windows'ta SMTC, Linux'ta MPRIS.
 4. **Telefondan BLE ile ayar yapilmayacak.** Ayar icin cihazin kendi web
    arayuzu. BLE sadece iOS bildirimleri (ANCS) icin.
-5. **Hava durumu icin anahtarsiz kaynak:** Open-Meteo.
+5. **Performans hedefi 24 FPS tam kare esdegeri ve bu karsilandi.** Daha
+   hizli tasima ya da daha iyi sikistirma icin is yapilmayacak; baglanti
+   sikistirma ile birlikte SPI tavanini zaten dolduruyor. Gerekce
+   `plans.md` ve `docs/measurements.md` icinde.
+6. **Kendi kodegimiz sadece RLE16.** Fotograf, GIF, video icin kutuphane
+   kullanilacak (AnimatedGIF, TJpg_Decoder, MJPEG), kendi kodek yazilmaz.
+7. **SPI 40 MHz.** Olculdu, kararli, darbogaz degil.
+8. **Hava durumu icin anahtarsiz kaynak:** Open-Meteo.
 
 ## Kapsam disi (istenmedikce ekleme)
 

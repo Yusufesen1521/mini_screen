@@ -217,16 +217,34 @@ JPEG eklemek icin yer var.
 
 ## Akis kontrolu
 
-**Piksel verisi icin cerceve basina ACK yok.** USB CDC zaten geri basinc
-sagliyor: cihaz okumazsa host tarafindaki yazma blokluyor. Ustune bir
-pencere mekanizmasi koymak her cerceveye gidis donus gecikmesi eklerdi.
+**Pencere tabanli, cerceve sayisina gore.**
 
-Bunun yerine:
+PC her FRAME_REGION cercevesinde FLAGS icindeki `ACK iste` bitini kaldirir.
+Cihaz cerceveyi tam olarak isledikten sonra (cozme ve ekrana basma dahil)
+ACK gonderir. PC ayni anda en fazla `rx_slots` kadar onaysiz cerceve
+birakabilir; sinira gelince ACK bekler.
 
-- PC, FLAGS bitinde `ACK iste` bayragini kaldirarak istedigi cerceve icin
-  onay isteyebilir. Gecikme olcumu ve senkron noktalari icin.
-- Cihaz hata durumunda kendiliginden NACK gonderir.
-- PC, GET_STATUS ile sayaclari isteyebilir.
+`rx_slots` degeri CAPS ile bildirilir, su an 3. Bu deger gidis donusu
+gizlemeye yetiyor: onceki cerceve ekrana basilirken sonraki yolda oluyor.
+Ayni anda cihaz asla isleyebileceginden fazlasini almiyor.
+
+ACK gelmezse PC zaman asimina ugrar ve baglantiyi yeniden kurar. NACK
+gelirse o bolge bir kez yeniden gonderilir.
+
+### Neden pencere gerekti
+
+Ilk tasarimda cerceve basina ACK yoktu. Gerekce "USB CDC zaten geri basinc
+sagliyor, cihaz okumazsa host tarafindaki yazma blokluyor" idi.
+
+**Bu varsayim olculdu ve yanlis cikti.** Arduino'nun HWCDC surucusu geri
+basinc uygulamiyor: paketi kabul ediyor, kendi kuyrugu doluysa baytlari
+sessizce atiyor, host hicbir sey fark etmiyor. Surekli yuk altinda 60
+karede 7-12 cerceve dusuyordu ve hepsi payload CRC hatasi olarak
+goruluyordu, cunku cercevenin ortasindan baytlar eksiliyordu.
+
+Olcumun ayrintisi `docs/measurements.md` icinde. Cikan ders genel: hicbir
+USB CDC surucusunun geri basinc sagladigina guvenilemez, akis kontrolu
+protokolun isi.
 
 **STATUS payload (16 bayt)**
 

@@ -267,3 +267,63 @@ gerekebilir.
 
 Yeniden acilma sarti: bir faz gercekten 0.2 MB/s ustu istemeye baslarsa, ya
 da PCB asamasinda ikinci bir hat eklenirse.
+
+---
+
+## Faz 1.4b: Akis kontrolu sonrasi
+
+Tarih: 2026-09-19
+
+Iki degisiklik yapildi:
+
+1. **Pencere tabanli akis kontrolu.** PC her cerceveye `ACK iste` bayragini
+   koyuyor ve en fazla `rx_slots` (3) onaysiz cerceve birakiyor. Mekanizma
+   zaten protokolde vardi, kullanilmiyordu.
+2. **Ekrana basma ayri cekirdege alindi.** Once okuma ve basma ardisikti;
+   olculen 36 ms okuma + 35 ms basma = 71 ms, yani 14 FPS. Ayrilinca limit
+   ikisinin buyugu oldu.
+
+### Sonuclar
+
+Uc ardisik kosu, tam kare 320x240, 30 kare:
+
+| Gorsel | Codec | Tel bayt | Sikisma | MB/s | FPS | NACK | Dusen |
+|---|---|---|---|---|---|---|---|
+| duz renk | RLE16 | 1857 | 82.7x | 0.05 | 28.3 | 0 | 0 |
+| arayuz | RLE16 | 7296 | 21.1x | 0.18 | 24.6 | 0 | 0 |
+| gradyan | RLE16 | 23106 | 6.6x | 0.13 | 5.6 | 0 | 0 |
+| gurultu | NONE | 153666 | 1.0x | 0.13 | 0.8 | 0 | 0 |
+
+Uc kosunun ucunde de `dusen=0`, `payloadCRC=0`, `senkron=0`, `NACK=0`.
+Tekrarlanabilirlik: duz renk uc kosuda da 28.3; arayuz 21.4 / 24.5 / 24.6.
+
+**Hedef karsilandi.** Arayuz iceriginde 24.6 FPS, hedef 24 idi.
+
+Duz renkteki 28.3 FPS tam olarak SPI sinirinin kendisi: uc serit x 11.6 ms
+= 34.8 ms, yani 28.7 FPS. Yani o icerikte artik baglanti degil ekran
+sinirliyor.
+
+### Yol boyunca bulunan hata: cerceveler birbirinin icine giriyordu
+
+Cekirdek ayrimindan sonra olcumler tekrarlanamaz hale geldi; ayni test
+arka arkaya 24.6 ve 4.8 FPS verdi. Serit basina sure dagilimina bakilinca
+sebep gorundu:
+
+```
+serit suresi ms: min 3.1  p50 18.8  p90 36.5  p99 44.4  max 2040.2
+```
+
+Bir serit tam 2040 ms surmustu, yani PC tarafindaki ACK zaman asiminin
+kendisi. Arada bir ACK kayboluyordu.
+
+Sebep: `sendFrame` basligi, payload'i ve CRC'yi uc ayri `Serial.write`
+cagrisiyla gonderiyordu. Tek gorevliyken sorun degildi. Iki cekirdek
+olunca `loop()` bir NACK ya da LOG yazarken `pushTask` ACK'in ortasinda
+kalabiliyor ve iki cerceve birbirinin icine giriyor.
+
+Cozum: gonderim kilidi (mutex) ve cerceveyi tek parca halinde yazma.
+Sonrasinda uc kosu da tekrarlanabilir cikti.
+
+Bu, tek gorevliyken gorunmeyen ama es zamanlilik gelince ortaya cikan
+turden bir hata. Ileride cihaza baska bir gorev eklenirse ayni tuzak
+gecerli: **protokol cercevesi tek parca ve kilit altinda gonderilmeli.**
