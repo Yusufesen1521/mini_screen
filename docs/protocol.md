@@ -57,7 +57,10 @@ pikselleri 16 bitlik olduguna gore, alim tamponundan dogrudan `pushImage`
 cagirabilmek icin bu hizalama gerekli. Aksi halde her bolge icin fazladan
 bir kopyalama gerekirdi.
 
-**LEN neden 16 bit:** en buyuk payload 65535 bayt. Tam kare 153600 bayt
+**LEN neden 16 bit:** alan tavani 65535 bayt. Cihazin gercekte kabul ettigi
+sinir CAPS icindeki `max_payload` ile bildirilir ve bilerek bu tavanin
+altinda tutulur (su an 61440). Ikisi esit olsaydi `PAYLOAD_TOO_LARGE` yolu
+hicbir zaman tetiklenemez, yani test edilemeyen olu kod olurdu. Tam kare 153600 bayt
 ettigi icin sikismamis tam kare uc parcaya bolunur. Olcum 2 bolmenin
 bedava oldugunu gosterdigi icin bu bir kayip degil, karsiliginda baslik
 kucuk kaliyor.

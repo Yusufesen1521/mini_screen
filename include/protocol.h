@@ -104,8 +104,14 @@
 // ---------------------------------------------------------------------------
 // Cihaz sinirlari
 // ---------------------------------------------------------------------------
-// LEN alani 16 bit. Cihaz bu kadarini tamponlayabildigini CAPS ile bildirir.
-#define PROTO_MAX_PAYLOAD       65535
+// LEN alani 16 bit, yani teorik tavan 65535.
+#define PROTO_LEN_MAX           65535
+
+// Cihazin kabul ettigi en buyuk payload. Bilerek alan tavaninin altinda
+// tutuluyor: esit olsaydi PAYLOAD_TOO_LARGE yolu hicbir zaman
+// tetiklenemez, yani test edilemeyen olu kod olurdu. 60 KB, PC tarafinin
+// kullandigi 320x80 seritten (51210 bayt) rahatca buyuk.
+#define PROTO_MAX_PAYLOAD       61440
 
 // Ayni anda tamponlanan cerceve sayisi. Tek gorevli alim yapiliyor, bu yuzden
 // 1. Olcum kare kaybi gosterirse artirilacak.

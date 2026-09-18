@@ -388,17 +388,27 @@ void setup()
   drawSplash();
   backlightSet(BL_BRIGHTNESS_DEFAULT);
 
-  Serial.begin(SERIAL_BAUD);   // USB CDC, protokol portu
+  // HWCDC varsayilan RX tamponu 256 bayt. pushImage milisaniyelerce
+  // bloklarken bu tampon tasiyor ve baytlar sessizce dusuyor; sonucu
+  // payload CRC hatasi olarak goruluyor. Buyutmek sart.
+  const size_t rxSet = Serial.setRxBufferSize(CDC_RX_BUFFER_SIZE);
+  const size_t txSet = Serial.setTxBufferSize(CDC_TX_BUFFER_SIZE);
+  Serial.begin(SERIAL_BAUD);
+  logPrintf("CDC tampon : rx %u istendi %u oldu, tx %u istendi %u oldu\n",
+            (unsigned)CDC_RX_BUFFER_SIZE, (unsigned)rxSet,
+            (unsigned)CDC_TX_BUFFER_SIZE, (unsigned)txSet);
 
   logPrintf("Hazir, PC bekleniyor (yerlesik USB portu)\n");
 }
 
 void loop()
 {
-  const int available = Serial.available();
-  if (available > 0) {
-    const size_t want = (available > RX_CHUNK_SIZE) ? RX_CHUNK_SIZE : (size_t)available;
-    const size_t got = Serial.readBytes(rxChunk, want);
+  // Tamponu bosaltana kadar oku.
+  while (true) {
+    const size_t got = Serial.read(rxChunk, RX_CHUNK_SIZE);
+    if (got == 0) {
+      break;
+    }
     framer.feed(rxChunk, got, millis());
   }
 

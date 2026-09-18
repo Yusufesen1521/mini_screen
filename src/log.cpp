@@ -7,6 +7,7 @@
 
 #include "pins.h"
 
+
 static LogSink logSink = nullptr;
 
 static char   bootBuf[LOG_BOOT_BUF_SIZE];

@@ -65,6 +65,15 @@
 // kurulunca protokol uzerinden gonderilir.
 #define LOG_BOOT_BUF_SIZE  2048
 
+// USB tamponlari, ESP-IDF usb_serial_jtag surucusu icin. Halka tampon
+// olarak dahili RAM'de duruyor, PSRAM'e alinamaz.
+//
+// RX tamponu ekrana basma suresini karsilayacak kadar buyuk olmali:
+// tam kare push 35 ms suruyor, o sirada gelen veri buraya birikiyor.
+#define CDC_RX_BUFFER_SIZE    16384
+#define CDC_TX_BUFFER_SIZE    4096
+#define CDC_WRITE_TIMEOUT_MS  100
+
 // ---------------------------------------------------------------------------
 // Ekran yerlesimi (yatay)
 //

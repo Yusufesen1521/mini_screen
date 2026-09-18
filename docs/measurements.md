@@ -98,3 +98,107 @@ calisabilir. DMA tavani yukseltmezdi, sadece CPU'yu serbest birakirdi.
 - **Alim tamponlari PSRAM'de olacak.** Fark olcum hatasi seviyesinde,
   dahili SRAM daha degerli bir kaynak.
 - **RLE hedefi 4.4 kat.** Bunun altinda USB, ustunde SPI sinirlar.
+
+---
+
+## Faz 1.4: USB baglantisinin gercek tavani
+
+Tarih: 2026-09-19
+Olcum araci: `tools/link_test.py`, ayrica dogrudan bayt akitan kucuk betikler
+Firmware: Arduino HWCDC surucusu (`ARDUINO_USB_CDC_ON_BOOT=1`)
+
+### Uctan uca sonuclar
+
+Tam kare 320x240, ham 153600 bayt, 30 kare:
+
+| Gorsel | Codec | Tel bayt | Sikisma | MB/s | FPS |
+|---|---|---|---|---|---|
+| duz renk | RLE16 | 1857 | 82.7x | 0.11 | 61.2 |
+| arayuz | RLE16 | 7296 | 21.1x | 0.17 | 23.5 |
+| gradyan | RLE16 | 23106 | 6.6x | 0.12 | 5.3 |
+| gurultu | NONE | 153666 | 1.0x | 0.13 | 0.8 |
+
+Sikistirma oranlari beklendigi gibi: arayuz icerigi 21 kat, yani hedeflenen
+4.4 katin cok ustunde. Ama **tasima hizi beklenenin cok altinda**.
+
+### Darbogazin yeri
+
+Ekran isi denklemden cikarilarak, gecerli SOF icermeyen ham bayt akitilarak
+olculdu. Cihaz sadece senkron ariyor, ekrana bir sey basmiyor, cevap
+uretmiyor:
+
+| Yazma boyutu | MB/s |
+|---|---|
+| 64 bayt | 0.314 |
+| 256 bayt | 0.186 |
+| 1024 bayt | 0.150 |
+| 4096 bayt | 0.128 |
+| 16384 bayt | 0.128 |
+| 65536 bayt | 0.128 |
+
+Iki sonuc cikiyor:
+
+1. **Darbogaz cihazda, host tarafinda degil.** Host tarafi darbogaz olsaydi
+   buyuk yazmalar daha verimli olurdu; tam tersi oluyor.
+2. **Yigin baskisi altinda durum kotulesiyor.** Ardarda paket geldiginde hiz
+   yariya duduyor.
+
+Nedeni Arduino HWCDC surucusunun tasarimi. Gelen her bayt tek tek bir
+FreeRTOS kuyruguna konuyor: kesme icinde bayt basina bir `xQueueSendFromISR`
+(`HWCDC.cpp:157`), okurken bayt basina bir `xQueueReceive`
+(`HWCDC.cpp:576`). Kuyruk elemani 1 bayt.
+
+### Veri kaybi
+
+Asil sorun hiz degil, **kayip**. Surekli yuk altinda cerceveler dusuyor:
+
+| Yazma parcasi | MB/s | FPS | 60 karede dusen |
+|---|---|---|---|
+| 64 bayt | 0.255 | 35.0 | 9 |
+| 256 bayt | 0.225 | 30.8 | 8 |
+| 1024 bayt | 0.208 | 28.5 | 9 |
+| 8192 bayt | 0.200 | 27.3 | 7 |
+| tam cerceve | 0.206 | 28.2 | 12 |
+
+Dusen cercevelerin tamami payload CRC hatasi, yani baytlar kayboluyor.
+Parca boyutu degistirmek kaybi ortadan kaldirmiyor.
+
+RX tamponu 16 KB'a cikarildi ve calisma aninda dogrulandi
+(`rx 16384 istendi 16384 oldu`), kayip yine de suruyor. Yani basit tampon
+tasmasi degil.
+
+### Cikan ders: protokol varsayimi yanlisti
+
+`docs/protocol.md` icinde cerceve basina ACK konmamasinin gerekcesi
+"USB CDC zaten geri basinc sagliyor, cihaz okumazsa host tarafindaki yazma
+blokluyor" idi. **Bu varsayim yanlis cikti.** HWCDC geri basinc uygulamiyor;
+paketi kabul edip, kuyruk doluysa baytlari sessizce atiyor. Host hicbir sey
+fark etmiyor.
+
+### Denenen ve basarisiz olan: ESP-IDF surucusu
+
+`ARDUINO_USB_CDC_ON_BOOT=0` yapilip ESP-IDF'in kendi `usb_serial_jtag`
+surucusune gecildi. O surucu halka tampon uzerinden toplu kopyalama yapiyor,
+dogru cozum bu olmali.
+
+Sonuc: cihaz hic cevap vermedi. Ne protokol, ne minimal bir eko testi, ne de
+reset sonrasi ROM ciktisi USB uzerinden goruldu. USB portu numaralandi
+(COM5 mevcut, esptool cipi taniyor) ama tek bayt gelmedi.
+
+Teshis edilemedi, cunku **log hatti UART0 uzerinde ve o kabloyu protokol
+icin USB portuna tasimistik.** `usb_serial_jtag_driver_install` sonucunu
+gorebilecek hicbir kanal kalmadi. Korlemesine tahmin yurutmek yerine
+bilinen calisan duruma donuldu.
+
+Bu arada ogrenilen bir sey: IDF surucusu denendikten sonra esptool normal
+yolla yukleyemedi ("No serial data received"). `--no-stub` ile calisti.
+
+### Durum
+
+Faz 1 bu haliyle kapatilamaz. Iki isin de yapilmasi gerekiyor:
+
+1. **Tasima surucusu duzeltilmeli.** IDF surucusu ayaga kaldirilmali.
+   Bunun icin hata ayiklama gorunurlugu, yani UART kablosu gerekiyor.
+2. **Protokole akis kontrolu eklenmeli.** Hangi surucu kullanilirsa
+   kullanilsin, "USB geri basinc saglar" varsayimina guvenilemeyecegi
+   olculdu. Kredi tabanli bir pencere gerekli.
