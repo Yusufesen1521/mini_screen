@@ -7,6 +7,16 @@
 
 #include "pins.h"
 
+// ARDUINO_USB_CDC_ON_BOOT=1 iken cekirdek UART0'i Serial0 olarak veriyor ve
+// Serial USB CDC'ye gidiyor. 0 iken Serial0 hic tanimlanmiyor, UART0
+// dogrudan Serial oluyor. Tanilama ortami CDC_ON_BOOT=0 ile derlendigi
+// icin ikisi de desteklenmeli.
+#if ARDUINO_USB_CDC_ON_BOOT
+  #define LOG_UART Serial0
+#else
+  #define LOG_UART Serial
+#endif
+
 
 static LogSink logSink = nullptr;
 
@@ -16,7 +26,7 @@ static size_t bootLen = 0;
 void logBegin()
 {
   // Serial (USB CDC) protokole ait, burada acilmiyor.
-  Serial0.begin(SERIAL_BAUD);
+  LOG_UART.begin(SERIAL_BAUD);
 }
 
 void logPrintf(const char *fmt, ...)
@@ -34,7 +44,7 @@ void logPrintf(const char *fmt, ...)
   const size_t len = (written < (int)sizeof(line)) ? (size_t)written
                                                    : sizeof(line) - 1;
 
-  Serial0.write((const uint8_t *)line, len);
+  LOG_UART.write((const uint8_t *)line, len);
 
   if (logSink != nullptr) {
     logSink(line);
