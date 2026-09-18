@@ -9,8 +9,9 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
-#include <stdarg.h>
 
+#include "backlight.h"
+#include "log.h"
 #include "pins.h"
 
 static TFT_eSPI tft;
@@ -22,75 +23,6 @@ static bool counterSpriteReady = false;
 
 static uint32_t counterValue = 0;
 static uint32_t lastTickMs = 0;
-
-// ---------------------------------------------------------------------------
-// Seri cikti
-//
-// ARDUINO_USB_CDC_ON_BOOT=1 oldugu icin Serial, kartin yerlesik USB portuna
-// (GPIO 19/20) baglanir. Kart UART kopru portuna takiliysa oradan hicbir sey
-// gorunmez. Bu yuzden ayni cikti Serial0 (UART0, TX/RX pinleri) uzerine de
-// basiliyor; hangi porta takili olursan ol log akar.
-// ---------------------------------------------------------------------------
-
-static void logBegin()
-{
-  Serial.begin(SERIAL_BAUD);
-  Serial0.begin(SERIAL_BAUD);
-
-  const uint32_t start = millis();
-  while (!Serial && (millis() - start) < SERIAL_WAIT_MS) {
-    delay(10);
-  }
-}
-
-static void logPrintf(const char *fmt, ...)
-{
-  char line[160];
-
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(line, sizeof(line), fmt, args);
-  va_end(args);
-
-  Serial.print(line);
-  Serial0.print(line);
-}
-
-// ---------------------------------------------------------------------------
-// Arka isik (LEDC PWM)
-// ---------------------------------------------------------------------------
-
-static void backlightBegin()
-{
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttach(PIN_TFT_BL, BL_PWM_FREQ_HZ, BL_PWM_RESOLUTION_BITS);
-#else
-  ledcSetup(BL_PWM_CHANNEL, BL_PWM_FREQ_HZ, BL_PWM_RESOLUTION_BITS);
-  ledcAttachPin(PIN_TFT_BL, BL_PWM_CHANNEL);
-#endif
-}
-
-// brightness: 0 = kapali, 255 = tam parlaklik (8 bit cozunurluk ile birebir)
-static void backlightSet(uint8_t brightness)
-{
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcWrite(PIN_TFT_BL, brightness);
-#else
-  ledcWrite(BL_PWM_CHANNEL, brightness);
-#endif
-}
-
-// Ekran baslatilmadan once kisa darbeler. Panel hic goruntu vermese bile bu
-// darbeler goruluyorsa firmware calisiyor, GPIO 21 / VCC / GND saglam demektir.
-static void backlightHeartbeat()
-{
-  for (uint8_t i = 0; i < BL_HEARTBEAT_PULSES; i++) {
-    backlightSet(BL_BRIGHTNESS_DEFAULT);
-    delay(BL_HEARTBEAT_MS);
-    backlightSet(BL_BRIGHTNESS_OFF);
-    delay(BL_HEARTBEAT_MS);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Acilis bilgisi

@@ -85,11 +85,21 @@ cihazin kendi flash'indan hem PC'den?
 
 ### Isler
 
-**1.1 Ekran tarafinin tavanini olc**
-- Mevcut 40 MHz'de tam kare suresi, DMA'siz ve DMA'li
-- 80 MHz denemesi: kararli mi, artefakt var mi
-- `pushImageDMA` ile cift tampon: bir bolge gonderilirken digeri hazirlanir
-- Sonuc tablosu: her yapilandirma icin MB/s ve tam kare FPS
+**1.1 Ekran tarafinin tavanini olc** (bitti)
+Olcum araci `src/bench_main.cpp`, sonuclar `docs/measurements.md`.
+
+Ozet: 40 MHz'de 4.40 MB/s, 80 MHz'de 7.87 MB/s. Bolge boyutunun maliyeti
+yok, PSRAM ile SRAM arasinda yuzde 2 fark var, bayt sirasi cevirmek bedava.
+TFT_eSPI'nin DMA yolu ESP32-S3'te cokuyor ama gerekmiyor.
+
+Bu olcumun protokole etkisi:
+- **Ekran degil USB darbogaz.** SPI, USB'den 4.4 kat hizli. Kalan is
+  ekrani hizlandirmak degil, USB tarafini dogru kurmak.
+- **Sikistirma hedefi 4.4 kat.** Altinda USB, ustunde SPI sinirlar.
+  Bu oranda tam kare hizi yaklasik 28 FPS.
+- **Kucuk bolge cezasi yok**, protokol serbestce bolebilir.
+- **Alim tamponlari PSRAM'de olacak.**
+- **SPI 40 MHz kalacak**, 80 MHz gereksiz risk.
 
 **1.2 Protokolu tasarla ve yaz**
 - Cerceve yapisi: SOF, protokol surumu, mesaj tipi, uzunluk, payload, CRC
@@ -145,11 +155,19 @@ cihazin kendi flash'indan hem PC'den?
 
 ### Bilinen riskler
 
-- 80 MHz SPI bu panelde kararsiz olabilir. Olcup karar verilecek, zorlanmayacak.
-- TFT_eSPI'nin DMA yolu ile sprite kullanimi birlikte dikkat ister, tampon
-  omru yanlis yonetilirse yirtilma olur.
 - USB Full Speed siniri (yaklasik 1 MB/s) asilamaz. Cozum sikistirma ve
   bolgesel guncelleme, daha hizli bir yol yok.
+- Bloklayan push sirasinda CPU mesgul. Ekran itme ile USB alimi ayri
+  cekirdeklere dagitilacak, yoksa alim sirasinda kare kaybi olabilir.
+- 80 MHz gorsel kararliligi olculmedi. Ileride benimsenirse once uzun
+  sureli bozulma testi gerekir.
+
+### Kapanan riskler
+
+- ~~80 MHz kararsiz olabilir~~: olculdu, 7.87 MB/s veriyor ama gerekmedigi
+  icin benimsenmedi.
+- ~~TFT_eSPI DMA yolu dikkat ister~~: ESP32-S3'te tamamen bozuk oldugu
+  bulundu, kullanilmiyor ve gerekmiyor.
 
 ---
 
