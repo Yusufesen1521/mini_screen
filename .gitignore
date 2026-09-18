@@ -1,0 +1,18 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# VS Code (uretilen dosyalar; extensions.json paylasilabilir kalsin)
+.vscode/*
+!.vscode/extensions.json
+
+# Derleyici / arac ciktilari
+.clang_complete
+.gcc-flags.json
+compile_commands.json
+CMakeListsPrivate.txt
+
+# Isletim sistemi
+.DS_Store
+Thumbs.db
