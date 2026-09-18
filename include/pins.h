@@ -61,6 +61,10 @@
 #define SERIAL_BAUD        115200
 #define SERIAL_WAIT_MS     1500   // USB CDC hazir olana kadar en fazla bekleme
 
+// PC baglanmadan once uretilen log satirlari burada birikir, baglanti
+// kurulunca protokol uzerinden gonderilir.
+#define LOG_BOOT_BUF_SIZE  2048
+
 // ---------------------------------------------------------------------------
 // Ekran yerlesimi (yatay)
 //

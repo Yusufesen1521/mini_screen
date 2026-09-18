@@ -70,17 +70,28 @@ class Link:
         self.ser.write(data)
 
     def poll(self, timeout=0.5):
-        """Verilen sure boyunca gelen cerceveleri toplar."""
+        """Gelen cerceveleri toplar. LOG cerceveleri ayiklanip basilir."""
         deadline = time.time() + timeout
         frames = []
         while time.time() < deadline:
             n = self.ser.in_waiting
             data = self.ser.read(n if n else 1)
             if data:
-                frames += self.parser.feed(data)
+                for f in self.parser.feed(data):
+                    if f["type"] == P.MSG_LOG:
+                        self._print_log(f["payload"])
+                    else:
+                        frames.append(f)
             elif frames:
                 break
         return frames
+
+    @staticmethod
+    def _print_log(payload):
+        text = payload.decode("utf-8", "replace")
+        for line in text.splitlines():
+            if line.strip():
+                print("  [cihaz] %s" % line)
 
     def expect(self, msg_type, timeout=1.0):
         for f in self.poll(timeout):
@@ -114,8 +125,11 @@ def handshake(link, quiet=False):
         "codecs": p[9],
         "max_payload": struct.unpack_from("<H", p, 10)[0],
         "rx_slots": p[12],
+        "selftest": p[13],
         "mac": ":".join("%02X" % b for b in p[14:20]),
     }
+    link.poll(0.4)   # CAPS arkasindan gelen acilis loglari
+
     if not quiet:
         print("Cihaz baglandi")
         print("  protokol    : %d" % info["proto"])
@@ -125,6 +139,7 @@ def handshake(link, quiet=False):
               (info["codecs"], ", RLE16" if info["codecs"] & 0x02 else ""))
         print("  max payload : %d bayt" % info["max_payload"])
         print("  rx slot     : %d" % info["rx_slots"])
+        print("  kendini sinama: %s" % ("TAMAM" if info["selftest"] else "HATA"))
         print("  mac         : %s" % info["mac"])
     return info
 

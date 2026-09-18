@@ -53,6 +53,11 @@
 #define MSG_STATUS              0x85
 #define MSG_PONG                0x86
 
+// Cihaz log satirlari. UART hatti bagli olmadan da tanilama gorulebilsin
+// diye eklendi. Baglantidan once biriken satirlar HELLO'dan sonra topluca
+// gonderilir.
+#define MSG_LOG                 0x87
+
 // ---------------------------------------------------------------------------
 // Hata kodlari
 // ---------------------------------------------------------------------------
@@ -89,6 +94,9 @@
 // ---------------------------------------------------------------------------
 // CAPS ve STATUS payload boyutlari
 // ---------------------------------------------------------------------------
+// CAPS offset 13: acilistaki kendini sinama sonucu, 1 = gecti
+#define CAPS_OFF_SELFTEST       13
+
 #define CAPS_PAYLOAD_SIZE       20
 #define STATUS_PAYLOAD_SIZE     16
 #define HELLO_PAYLOAD_SIZE      4

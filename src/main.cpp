@@ -13,6 +13,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
+#include <string.h>
 
 #include "backlight.h"
 #include "crc.h"
@@ -34,6 +35,7 @@ static uint16_t *decodeBuf = nullptr;    // RLE cozulmus pikseller
 static uint8_t   rxChunk[RX_CHUNK_SIZE];
 
 static bool     connected = false;
+static bool     selfTestOk = false;
 static uint32_t lastRegionUs = 0;
 
 // ---------------------------------------------------------------------------
@@ -65,6 +67,16 @@ static void sendFrame(uint8_t type, uint8_t seq, const uint8_t *payload, uint16_
   Serial.write(tail, sizeof(tail));
 }
 
+// Log satirlarini protokol uzerinden gonderir. Boylece UART hatti bagli
+// olmadan, tek kabloyla da tanilama gorunur.
+static void logToLink(const char *text)
+{
+  const size_t len = strlen(text);
+  if (len > 0 && len <= PAYLOAD_CAP) {
+    sendFrame(MSG_LOG, 0, (const uint8_t *)text, (uint16_t)len);
+  }
+}
+
 static void sendNack(uint8_t reason, uint8_t seq)
 {
   const uint8_t payload[2] = { reason, seq };
@@ -88,7 +100,7 @@ static void sendCaps(uint8_t seq)
   p[10] = (uint8_t)(PAYLOAD_CAP & 0xFF);
   p[11] = (uint8_t)(PAYLOAD_CAP >> 8);
   p[12] = PROTO_RX_SLOTS;
-  p[13] = 0;
+  p[CAPS_OFF_SELFTEST] = selfTestOk ? 1 : 0;
   esp_read_mac(&p[14], ESP_MAC_WIFI_STA);
 
   sendFrame(MSG_CAPS, seq, p, sizeof(p));
@@ -193,6 +205,9 @@ static void onFrame(uint8_t type, uint8_t flags, uint8_t seq,
         logPrintf("PC baglandi, protokol modu\n");
       }
       sendCaps(seq);
+      // CAPS gittikten sonra kur: biriken acilis loglari CAPS'in arkasindan
+      // gelsin, PC once cihazi tanisin.
+      logSetSink(logToLink);
       return;   // CAPS zaten cevap, ayrica ACK gonderme
 
     case MSG_FRAME_REGION:
@@ -344,7 +359,8 @@ void setup()
             psramFound() ? "bulundu" : "BULUNAMADI", (unsigned)ESP.getPsramSize());
 
   logPrintf("Kendini sinama:\n");
-  logPrintf(selfTest() ? "  sonuc: TAMAM\n" : "  sonuc: HATA, protokol guvenilmez\n");
+  selfTestOk = selfTest();
+  logPrintf(selfTestOk ? "  sonuc: TAMAM\n" : "  sonuc: HATA, protokol guvenilmez\n");
 
   backlightBegin();
   backlightHeartbeat();

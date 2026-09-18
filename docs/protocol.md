@@ -100,10 +100,17 @@ kadar patlama hatalarini yakaliyor, rastgele veride hata kacirma olasiligi
 | `0x83` | NACK | 2 bayt: sebep kodu, ilgili SEQ |
 | `0x84` | ERROR | 2 bayt: sebep kodu, ek bilgi |
 | `0x85` | STATUS | Sayaclar |
-| `0x86` | PONG | HELLO'daki SEQ yankilanir |
+| `0x86` | PONG | PING'deki SEQ yankilanir |
+| `0x87` | LOG | UTF-8 log metni, satir sonlari dahil |
 
 `0x90` girdi olaylari icin rezerve (rotary encoder ve butonlar, Faz 3 ve
 sonrasi).
+
+**LOG neden protokolde:** cihazin log hatti UART0 uzerinde. Kartin UART
+kopru portu takili degilse hicbir tanilama gorunmez. LOG mesaji sayesinde
+tek kabloyla, sadece yerlesik USB portu takiliyken de log okunabiliyor.
+Baglanti kurulmadan once uretilen acilis satirlari cihazda birikir ve
+HELLO'ya verilen CAPS cevabinin hemen ardindan topluca gonderilir.
 
 ## HELLO ve CAPS
 
@@ -129,7 +136,7 @@ cevap verir. PC, CAPS almadan FRAME_REGION gondermemeli.
 | 9 | 1 | codecs | Bit maskesi: bit0 NONE, bit1 RLE16 |
 | 10 | 2 | max_payload | Kabul edilen en buyuk LEN |
 | 12 | 1 | rx_slots | Ayni anda tamponlanabilen cerceve sayisi |
-| 13 | 1 | rsv | `00` |
+| 13 | 1 | selftest | Acilistaki kendini sinama sonucu, 1 = gecti |
 | 14 | 6 | mac | Cihazin MAC adresi, kimlik olarak |
 
 PC, cihazin bildirdigi `screen_w` ve `screen_h` disina cikmamali.
