@@ -1,9 +1,11 @@
-// log.h - iki seri port uzerine birden basan kucuk log yardimcisi
+// log.h - log ciktisi, sadece UART0 uzerine
 //
-// ARDUINO_USB_CDC_ON_BOOT=1 oldugu icin Serial, kartin yerlesik USB portuna
-// (GPIO 19/20) baglanir. Kart UART kopru portuna takiliysa oradan hicbir sey
-// gorunmez. Bu yuzden ayni cikti Serial0 (UART0) uzerine de basiliyor;
-// hangi porta takili olursan ol log akar.
+// USB CDC portu (Serial) artik protokole ait. Oraya bir bayt log yazmak
+// cerceve akisini bozar, bu yuzden log yalnizca Serial0 uzerine gider.
+//
+// Pratik sonuc: kartin iki USB portu da takili olmali.
+//   UART kopru portu -> yukleme ve log
+//   yerlesik USB portu -> protokol
 
 #pragma once
 

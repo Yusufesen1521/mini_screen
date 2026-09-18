@@ -8,13 +8,8 @@
 
 void logBegin()
 {
-  Serial.begin(SERIAL_BAUD);
+  // Serial (USB CDC) protokole ait, burada acilmiyor.
   Serial0.begin(SERIAL_BAUD);
-
-  const uint32_t start = millis();
-  while (!Serial && (millis() - start) < SERIAL_WAIT_MS) {
-    delay(10);
-  }
 }
 
 void logPrintf(const char *fmt, ...)
@@ -26,6 +21,5 @@ void logPrintf(const char *fmt, ...)
   vsnprintf(line, sizeof(line), fmt, args);
   va_end(args);
 
-  Serial.print(line);
   Serial0.print(line);
 }

@@ -1,55 +1,239 @@
-// mini_screen - ekran dogrulama testi
+// mini_screen - USB protokol alicisi
 //
-// Tek hedef: Lockerbox 3.2" ILI9341 panelin ESP32-S3 uzerinde dogru
-// calistigini kanitlamak. Renk sirasi, offset ve bolgesel guncelleme.
+// Bagli modda PC ciziyor, cihaz sadece basiyor. Bu firmware USB CDC
+// uzerinden gelen piksel bolgelerini ekrana yaziyor.
 //
-// Ekrana cizim isi drawTestScreen() / drawCounter() icinde toplandi. Ilerideki
-// USB tabanli bolge aktarimi bu iki fonksiyonun yerini alacak, gerisi ayni
-// kalabilir.
+// Protokolun bayt duzeyinde tanimi: docs/protocol.md
+//
+// Port dagilimi:
+//   Serial  (yerlesik USB, GPIO 19/20) -> protokol
+//   Serial0 (UART0, TX/RX pinleri)     -> log ve yukleme
+// Ikisi de takili olmali.
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <esp_heap_caps.h>
 
 #include "backlight.h"
+#include "crc.h"
+#include "framer.h"
 #include "log.h"
 #include "pins.h"
+#include "protocol.h"
+#include "rle16.h"
+
+#define RX_CHUNK_SIZE     1024
+#define PAYLOAD_CAP       PROTO_MAX_PAYLOAD
+#define DECODE_PIXELS     ((size_t)SCREEN_WIDTH * SCREEN_HEIGHT)
 
 static TFT_eSPI tft;
+static Framer framer;
 
-// Sayac bolgesi tek seferde basilsin diye sprite kullaniliyor: hem titreme
-// olmuyor hem de ileride gelecek "hazir tamponu ekrana bas" akisinin aynisi.
-static TFT_eSprite counterSprite(&tft);
-static bool counterSpriteReady = false;
+static uint8_t  *payloadBuf = nullptr;   // gelen cerceve payload'i
+static uint16_t *decodeBuf = nullptr;    // RLE cozulmus pikseller
+static uint8_t   rxChunk[RX_CHUNK_SIZE];
 
-static uint32_t counterValue = 0;
-static uint32_t lastTickMs = 0;
+static bool     connected = false;
+static uint32_t lastRegionUs = 0;
 
 // ---------------------------------------------------------------------------
-// Acilis bilgisi
+// Cerceve gonderme
 // ---------------------------------------------------------------------------
 
-static void printSystemInfo()
+static void sendFrame(uint8_t type, uint8_t seq, const uint8_t *payload, uint16_t len)
 {
-  logPrintf("\n=== mini_screen ===\n");
-  logPrintf("Chip      : %s rev %u, %u core\n",
-            ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
-  logPrintf("Flash     : %u bayt\n", (unsigned)ESP.getFlashChipSize());
+  uint8_t hdr[PROTO_HDR_SIZE];
 
-  if (psramFound()) {
-    logPrintf("PSRAM     : bulundu, %u bayt (bos %u bayt)\n",
-              (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram());
-  } else {
-    logPrintf("PSRAM     : BULUNAMADI\n");
+  hdr[PROTO_OFF_SOF0]  = PROTO_SOF0;
+  hdr[PROTO_OFF_SOF1]  = PROTO_SOF1;
+  hdr[PROTO_OFF_VER]   = PROTO_VERSION;
+  hdr[PROTO_OFF_TYPE]  = type;
+  hdr[PROTO_OFF_FLAGS] = 0;
+  hdr[PROTO_OFF_SEQ]   = seq;
+  hdr[PROTO_OFF_LEN]   = (uint8_t)(len & 0xFF);
+  hdr[PROTO_OFF_LEN + 1] = (uint8_t)(len >> 8);
+  hdr[PROTO_OFF_RSV]   = 0;
+  hdr[PROTO_OFF_HDRCRC] = crc8(&hdr[PROTO_HDRCRC_START], PROTO_HDRCRC_LEN);
+
+  const uint16_t c = crc16(payload, len);
+  const uint8_t tail[PROTO_CRC_SIZE] = { (uint8_t)(c & 0xFF), (uint8_t)(c >> 8) };
+
+  Serial.write(hdr, sizeof(hdr));
+  if (len > 0) {
+    Serial.write(payload, len);
   }
+  Serial.write(tail, sizeof(tail));
+}
 
-  logPrintf("Bos heap  : %u bayt\n", (unsigned)ESP.getFreeHeap());
-  logPrintf("SPI hizi  : %u Hz\n", (unsigned)SPI_FREQUENCY);
-  logPrintf("SPI portu : %u\n", (unsigned)SPI_PORT);
-  logPrintf("\n");
+static void sendNack(uint8_t reason, uint8_t seq)
+{
+  const uint8_t payload[2] = { reason, seq };
+  sendFrame(MSG_NACK, seq, payload, sizeof(payload));
+}
+
+static void sendCaps(uint8_t seq)
+{
+  uint8_t p[CAPS_PAYLOAD_SIZE] = {0};
+
+  p[0] = PROTO_VERSION;
+  p[1] = 0;  // fw major
+  p[2] = 1;  // fw minor
+  p[3] = 0;  // fw patch
+  p[4] = (uint8_t)(SCREEN_WIDTH & 0xFF);
+  p[5] = (uint8_t)(SCREEN_WIDTH >> 8);
+  p[6] = (uint8_t)(SCREEN_HEIGHT & 0xFF);
+  p[7] = (uint8_t)(SCREEN_HEIGHT >> 8);
+  p[8] = PIXFMT_RGB565_LE;
+  p[9] = CODEC_MASK_NONE | CODEC_MASK_RLE16;
+  p[10] = (uint8_t)(PAYLOAD_CAP & 0xFF);
+  p[11] = (uint8_t)(PAYLOAD_CAP >> 8);
+  p[12] = PROTO_RX_SLOTS;
+  p[13] = 0;
+  esp_read_mac(&p[14], ESP_MAC_WIFI_STA);
+
+  sendFrame(MSG_CAPS, seq, p, sizeof(p));
+}
+
+static void sendStatus(uint8_t seq)
+{
+  const Framer::Stats &s = framer.stats();
+  uint8_t p[STATUS_PAYLOAD_SIZE] = {0};
+
+  memcpy(&p[0], &s.framesOk, 4);
+  memcpy(&p[4], &s.framesDropped, 4);
+  memcpy(&p[8], &s.hdrCrcErrors, 2);
+  memcpy(&p[10], &s.payloadCrcErrors, 2);
+  memcpy(&p[12], &s.syncLosses, 2);
+
+  const uint16_t us = (lastRegionUs > 0xFFFF) ? 0xFFFF : (uint16_t)lastRegionUs;
+  memcpy(&p[14], &us, 2);
+
+  sendFrame(MSG_STATUS, seq, p, sizeof(p));
 }
 
 // ---------------------------------------------------------------------------
-// Test ekrani (bir kez cizilir)
+// FRAME_REGION isleme
+// ---------------------------------------------------------------------------
+
+static bool handleRegion(const uint8_t *payload, uint16_t len, uint8_t seq)
+{
+  if (len < REGION_HDR_SIZE) {
+    sendNack(ERR_BAD_REGION, seq);
+    return false;
+  }
+
+  const uint16_t x = (uint16_t)(payload[REGION_OFF_X] | (payload[REGION_OFF_X + 1] << 8));
+  const uint16_t y = (uint16_t)(payload[REGION_OFF_Y] | (payload[REGION_OFF_Y + 1] << 8));
+  const uint16_t w = (uint16_t)(payload[REGION_OFF_W] | (payload[REGION_OFF_W + 1] << 8));
+  const uint16_t h = (uint16_t)(payload[REGION_OFF_H] | (payload[REGION_OFF_H + 1] << 8));
+  const uint8_t format = payload[REGION_OFF_FORMAT];
+  const uint8_t codec = payload[REGION_OFF_CODEC];
+
+  // Kirpma yapilmiyor: sessiz kirpma PC tarafindaki hatayi gizler.
+  if (w == 0 || h == 0 ||
+      (uint32_t)x + w > SCREEN_WIDTH || (uint32_t)y + h > SCREEN_HEIGHT) {
+    sendNack(ERR_BAD_REGION, seq);
+    return false;
+  }
+  if (format != PIXFMT_RGB565_LE) {
+    sendNack(ERR_BAD_CODEC, seq);
+    return false;
+  }
+
+  const uint8_t *data = &payload[REGION_HDR_SIZE];
+  const uint16_t dataLen = (uint16_t)(len - REGION_HDR_SIZE);
+  const size_t pixels = (size_t)w * h;
+  const uint16_t *src = nullptr;
+
+  if (codec == CODEC_NONE) {
+    if (dataLen != pixels * 2) {
+      sendNack(ERR_BAD_REGION, seq);
+      return false;
+    }
+    // payloadBuf hizali ayrildi, REGION_HDR_SIZE cift sayi, yani data da
+    // cift adreste. Kopyalamadan dogrudan gonderilebilir.
+    src = reinterpret_cast<const uint16_t *>(data);
+  } else if (codec == CODEC_RLE16) {
+    const int32_t decoded = rle16Decode(data, dataLen, decodeBuf, DECODE_PIXELS);
+    if (decoded < 0 || (size_t)decoded != pixels) {
+      sendNack(ERR_DECODE_ERROR, seq);
+      return false;
+    }
+    src = decodeBuf;
+  } else {
+    sendNack(ERR_BAD_CODEC, seq);
+    return false;
+  }
+
+  const uint32_t t0 = micros();
+  // Payload little-endian RGB565, panel big-endian bekliyor. Cevrimi
+  // kutuphane yapiyor; olculen maliyeti yuzde 0.2.
+  tft.setSwapBytes(true);
+  tft.pushImage((int32_t)x, (int32_t)y, (int32_t)w, (int32_t)h, src);
+  lastRegionUs = micros() - t0;
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Cerceve dagitimi
+// ---------------------------------------------------------------------------
+
+static void onFrame(uint8_t type, uint8_t flags, uint8_t seq,
+                    const uint8_t *payload, uint16_t len, void *ctx)
+{
+  (void)ctx;
+  bool ok = true;
+
+  switch (type) {
+    case MSG_HELLO:
+      if (!connected) {
+        connected = true;
+        tft.fillScreen(COLOR_BACKGROUND);
+        logPrintf("PC baglandi, protokol modu\n");
+      }
+      sendCaps(seq);
+      return;   // CAPS zaten cevap, ayrica ACK gonderme
+
+    case MSG_FRAME_REGION:
+      ok = handleRegion(payload, len, seq);
+      break;
+
+    case MSG_SET_BACKLIGHT:
+      if (len != 1) {
+        sendNack(ERR_BAD_REGION, seq);
+        return;
+      }
+      backlightSet(payload[0]);
+      break;
+
+    case MSG_PING:
+      sendFrame(MSG_PONG, seq, nullptr, 0);
+      return;
+
+    case MSG_GET_STATUS:
+      sendStatus(seq);
+      return;
+
+    default:
+      sendNack(ERR_UNKNOWN_TYPE, seq);
+      return;
+  }
+
+  if (ok && (flags & PROTO_FLAG_ACK_REQ)) {
+    const uint8_t p[1] = { seq };
+    sendFrame(MSG_ACK, seq, p, sizeof(p));
+  }
+}
+
+static void onFramerError(uint8_t reason, uint8_t seq, void *ctx)
+{
+  (void)ctx;
+  sendNack(reason, seq);
+}
+
+// ---------------------------------------------------------------------------
+// Acilis ekrani
 // ---------------------------------------------------------------------------
 
 struct ColorBlock {
@@ -58,8 +242,8 @@ struct ColorBlock {
   const char *label;
 };
 
-// Etiketler blogun uzerine yaziliyor: renk sirasi ya da RGB/BGR ayari yanlissa
-// "RED" yazisi kirmizi olmayan bir blogun uzerinde kalir.
+// Etiketler blogun uzerine yaziliyor: renk sirasi ya da RGB/BGR ayari
+// yanlissa "RED" yazisi kirmizi olmayan bir blogun uzerinde kalir.
 static const ColorBlock kColorBlocks[BLOCK_COUNT] = {
   { COLOR_BLOCK_RED,   COLOR_TEXT,       "RED"   },
   { COLOR_BLOCK_GREEN, COLOR_BACKGROUND, "GREEN" },
@@ -67,91 +251,82 @@ static const ColorBlock kColorBlocks[BLOCK_COUNT] = {
   { COLOR_BLOCK_WHITE, COLOR_BACKGROUND, "WHITE" },
 };
 
-// Blogun sol ust kosesinin x degeri. Bloklar yan yana dizili.
-static int16_t blockX(uint8_t index)
-{
-  return BLOCK_FIRST_X + index * BLOCK_WIDTH;
-}
-
-static void drawCornerMarks()
-{
-  const int16_t x[CORNER_MARK_COUNT] = { 0, SCREEN_WIDTH - 1, 0, SCREEN_WIDTH - 1 };
-  const int16_t y[CORNER_MARK_COUNT] = { 0, 0, SCREEN_HEIGHT - 1, SCREEN_HEIGHT - 1 };
-
-  for (uint8_t i = 0; i < CORNER_MARK_COUNT; i++) {
-    tft.drawPixel(x[i], y[i], COLOR_CORNER_MARK);
-  }
-}
-
-static void drawTestScreen()
+static void drawSplash()
 {
   tft.fillScreen(COLOR_BACKGROUND);
 
-  // Baslik
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
   tft.drawString(TITLE_TEXT, SCREEN_WIDTH / 2, TITLE_Y, FONT_TITLE);
   tft.drawFastHLine(0, TITLE_AREA_HEIGHT - 1, SCREEN_WIDTH, COLOR_SEPARATOR);
 
-  // Renk bloklari
   tft.setTextDatum(MC_DATUM);
   for (uint8_t i = 0; i < BLOCK_COUNT; i++) {
-    const int16_t x = blockX(i);
+    const int16_t x = BLOCK_FIRST_X + i * BLOCK_WIDTH;
     tft.fillRect(x, BLOCK_Y, BLOCK_WIDTH, BLOCK_HEIGHT, kColorBlocks[i].color);
     tft.setTextColor(kColorBlocks[i].labelColor, kColorBlocks[i].color);
-    tft.drawString(kColorBlocks[i].label,
-                   x + BLOCK_WIDTH / 2,
-                   BLOCK_Y + BLOCK_HEIGHT / 2,
-                   FONT_LABEL);
+    tft.drawString(kColorBlocks[i].label, x + BLOCK_WIDTH / 2,
+                   BLOCK_Y + BLOCK_HEIGHT / 2, FONT_LABEL);
   }
 
-  // Sayac etiketi (sabit, sayac bolgesinin disinda)
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(COLOR_DIM_TEXT, COLOR_BACKGROUND);
-  tft.drawString(COUNTER_LABEL, COUNTER_LABEL_X, COUNTER_LABEL_Y, FONT_LABEL);
+  tft.drawString(SPLASH_TEXT, SPLASH_X, SPLASH_Y, FONT_LABEL);
 
-  drawCornerMarks();
+  // Kose isaretleri, offset kontrolu icin
+  tft.drawPixel(0, 0, COLOR_CORNER_MARK);
+  tft.drawPixel(SCREEN_WIDTH - 1, 0, COLOR_CORNER_MARK);
+  tft.drawPixel(0, SCREEN_HEIGHT - 1, COLOR_CORNER_MARK);
+  tft.drawPixel(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, COLOR_CORNER_MARK);
 }
 
 // ---------------------------------------------------------------------------
-// Bolgesel guncelleme: sadece sayac dikdortgeni
+// Kendini sinama
+//
+// Ayni test vektorleri PC tarafindaki araca da gomulu. Iki taraf ayni
+// sonucu uretmezse protokol daha ilk cerceve de tutmaz.
 // ---------------------------------------------------------------------------
 
-static void counterRegionBegin()
+static bool selfTest()
 {
-  counterSprite.setColorDepth(16);
-  counterSpriteReady = (counterSprite.createSprite(COUNTER_WIDTH, COUNTER_HEIGHT) != nullptr);
+  bool ok = true;
+  const uint8_t vector[] = "123456789";
+  const size_t vectorLen = sizeof(vector) - 1;
 
-  if (!counterSpriteReady) {
-    logPrintf("UYARI: sayac sprite ayrilamadi, dogrudan ciziliyor.\n");
-  }
-}
+  const uint8_t c8 = crc8(vector, vectorLen);
+  const uint16_t c16 = crc16(vector, vectorLen);
+  logPrintf("  crc8  (123456789) = 0x%02X  %s\n", c8, (c8 == 0xF4) ? "TAMAM" : "HATA");
+  logPrintf("  crc16 (123456789) = 0x%04X  %s\n", c16, (c16 == 0x29B1) ? "TAMAM" : "HATA");
+  ok &= (c8 == 0xF4) && (c16 == 0x29B1);
 
-// Geriye cizim suresini mikrosaniye cinsinden dondurur.
-static uint32_t drawCounter(uint32_t value)
-{
-  char text[12];
-  snprintf(text, sizeof(text), "%lu", (unsigned long)value);
+  uint16_t out[16];
 
-  const uint32_t startUs = micros();
+  // Tekrar kosusu: 8 piksel 0xF800
+  const uint8_t repeat[] = { 0x86, 0x00, 0xF8 };
+  int32_t n = rle16Decode(repeat, sizeof(repeat), out, 16);
+  const bool repeatOk = (n == 8) && (out[0] == 0xF800) && (out[7] == 0xF800);
+  logPrintf("  rle16 tekrar kosusu       %s\n", repeatOk ? "TAMAM" : "HATA");
+  ok &= repeatOk;
 
-  if (counterSpriteReady) {
-    counterSprite.fillSprite(COLOR_BACKGROUND);
-    counterSprite.setTextDatum(MC_DATUM);
-    counterSprite.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
-    counterSprite.drawString(text, COUNTER_WIDTH / 2, COUNTER_HEIGHT / 2, FONT_COUNTER);
-    counterSprite.pushSprite(COUNTER_X, COUNTER_Y);
-  } else {
-    tft.fillRect(COUNTER_X, COUNTER_Y, COUNTER_WIDTH, COUNTER_HEIGHT, COLOR_BACKGROUND);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
-    tft.drawString(text,
-                   COUNTER_X + COUNTER_WIDTH / 2,
-                   COUNTER_Y + COUNTER_HEIGHT / 2,
-                   FONT_COUNTER);
-  }
+  // Duz kosu: 2 piksel
+  const uint8_t literal[] = { 0x01, 0x11, 0x22, 0x33, 0x44 };
+  n = rle16Decode(literal, sizeof(literal), out, 16);
+  const bool literalOk = (n == 2) && (out[0] == 0x2211) && (out[1] == 0x4433);
+  logPrintf("  rle16 duz kosu            %s\n", literalOk ? "TAMAM" : "HATA");
+  ok &= literalOk;
 
-  return micros() - startUs;
+  // Kaynak erken bitti
+  const uint8_t truncated[] = { 0x86, 0x00 };
+  const bool truncOk = (rle16Decode(truncated, sizeof(truncated), out, 16) == -1);
+  logPrintf("  rle16 eksik kaynak        %s\n", truncOk ? "TAMAM" : "HATA");
+  ok &= truncOk;
+
+  // Hedef tasacakti
+  const bool overflowOk = (rle16Decode(repeat, sizeof(repeat), out, 4) == -2);
+  logPrintf("  rle16 hedef tasmasi       %s\n", overflowOk ? "TAMAM" : "HATA");
+  ok &= overflowOk;
+
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,43 +334,57 @@ static uint32_t drawCounter(uint32_t value)
 void setup()
 {
   logBegin();
-  printSystemInfo();
+  crcBegin();
+
+  logPrintf("\n=== mini_screen, protokol surumu %u ===\n", (unsigned)PROTO_VERSION);
+  logPrintf("Chip      : %s rev %u, %u core\n",
+            ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
+  logPrintf("Flash     : %u bayt\n", (unsigned)ESP.getFlashChipSize());
+  logPrintf("PSRAM     : %s, %u bayt\n",
+            psramFound() ? "bulundu" : "BULUNAMADI", (unsigned)ESP.getPsramSize());
+
+  logPrintf("Kendini sinama:\n");
+  logPrintf(selfTest() ? "  sonuc: TAMAM\n" : "  sonuc: HATA, protokol guvenilmez\n");
 
   backlightBegin();
   backlightHeartbeat();
-
-  // Ekran cizilene kadar arka isik kapali: acilis copu gozukmesin.
   backlightSet(BL_BRIGHTNESS_OFF);
 
-  logPrintf("tft.init() cagriliyor...\n");
   tft.init();
   tft.setRotation(DISPLAY_ROTATION);
-  logPrintf("tft.init() tamam, %dx%d\n", tft.width(), tft.height());
 
-  if (tft.width() != SCREEN_WIDTH || tft.height() != SCREEN_HEIGHT) {
-    logPrintf("UYARI: pins.h olculeri (%dx%d) donusle uyusmuyor.\n",
-              SCREEN_WIDTH, SCREEN_HEIGHT);
+  // Tamponlar PSRAM'de. Olcum dahili SRAM ile arasindaki farkin yuzde 2
+  // oldugunu gosterdi, SRAM daha degerli bir kaynak.
+  payloadBuf = (uint8_t *)heap_caps_malloc(PAYLOAD_CAP, MALLOC_CAP_SPIRAM);
+  decodeBuf = (uint16_t *)heap_caps_malloc(DECODE_PIXELS * 2, MALLOC_CAP_SPIRAM);
+
+  if (payloadBuf == nullptr || decodeBuf == nullptr) {
+    logPrintf("HATA: tamponlar ayrilamadi\n");
+    while (true) {
+      delay(1000);
+    }
   }
+  logPrintf("Tamponlar : payload %u bayt, cozme %u bayt (PSRAM)\n",
+            (unsigned)PAYLOAD_CAP, (unsigned)(DECODE_PIXELS * 2));
 
-  drawTestScreen();
-  counterRegionBegin();
+  framer.begin(payloadBuf, PAYLOAD_CAP, onFrame, onFramerError, nullptr);
 
+  drawSplash();
   backlightSet(BL_BRIGHTNESS_DEFAULT);
 
-  lastTickMs = millis();
-  logPrintf("Ekran hazir.\n");
+  Serial.begin(SERIAL_BAUD);   // USB CDC, protokol portu
+
+  logPrintf("Hazir, PC bekleniyor (yerlesik USB portu)\n");
 }
 
 void loop()
 {
-  const uint32_t now = millis();
-  if ((now - lastTickMs) < COUNTER_INTERVAL_MS) {
-    return;
+  const int available = Serial.available();
+  if (available > 0) {
+    const size_t want = (available > RX_CHUNK_SIZE) ? RX_CHUNK_SIZE : (size_t)available;
+    const size_t got = Serial.readBytes(rxChunk, want);
+    framer.feed(rxChunk, got, millis());
   }
-  lastTickMs += COUNTER_INTERVAL_MS;
 
-  counterValue++;
-  const uint32_t drawUs = drawCounter(counterValue);
-  logPrintf("sayac=%lu  cizim=%lu us\n",
-            (unsigned long)counterValue, (unsigned long)drawUs);
+  framer.poll(millis());
 }

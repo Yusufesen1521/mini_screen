@@ -89,17 +89,11 @@
 #define BLOCK_WIDTH        (SCREEN_WIDTH / BLOCK_COUNT)   // 80
 #define BLOCK_HEIGHT       104
 
-// Sayac etiketi (bir kez cizilir, sayac bolgesinin disinda kalir)
-#define COUNTER_LABEL      "COUNTER"
-#define COUNTER_LABEL_X    8
-#define COUNTER_LABEL_Y    152
-
-// Sadece bu dikdortgen her saniye guncellenir
-#define COUNTER_X          0
-#define COUNTER_Y          172
-#define COUNTER_WIDTH      SCREEN_WIDTH
-#define COUNTER_HEIGHT     48
-#define COUNTER_INTERVAL_MS 1000
+// Acilis ekranindaki durum yazisi. PC baglandiginda ekran temizlenir ve
+// bundan sonrasini PC cizer.
+#define SPLASH_TEXT        "PC BEKLENIYOR (USB)"
+#define SPLASH_X           8
+#define SPLASH_Y           160
 
 // Kose isaretleri (offset kontrolu icin birer piksel)
 #define CORNER_MARK_COUNT  4
