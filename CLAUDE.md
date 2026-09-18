@@ -1,7 +1,14 @@
 # mini_screen
 
-ESP32-S3 uzerinde ILI9341 TFT ekran surme projesi. Su anki asama: ekranin dogru
-calistigini kanitlayan minimal test firmware.
+Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
+
+**Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
+Su anki asama: Faz 0 bitti (ekran dogrulama), Faz 1 siradaki (piksel hatti ve
+USB protokolu).
+
+Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
+bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek
+sayi yazilir.
 
 ## Donanim (elde fiziksel olarak sadece bunlar var)
 
@@ -103,21 +110,37 @@ Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
 - LEDC cagrilari `ESP_ARDUINO_VERSION_MAJOR` ile hem core 2.x hem 3.x icin
   korunuyor. Su an core 2.0.17 kullaniliyor.
 
+## Sabit mimari kararlar
+
+Bunlar karara baglandi, yeniden acilmayacak. Gerekcesi `plans.md` icinde.
+
+1. **Bagli modda cizimi PC yapar, cihaz sadece basar.** Cihaz aptal bir
+   cerceve, render PC tarafinda. Gorsel islerin cozumu gomulu tarafta
+   aranmaz.
+2. **Bagimsiz modda auth gerektiren hicbir sey yok.** Sadece saat, hava
+   durumu, kayitli GIF ve duvar kagidi. OAuth, token saklama, sifreli kimlik
+   firmware'e hic girmeyecek.
+3. **Medya bilgisi Spotify ya da YouTube API'sinden degil, isletim sisteminin
+   medya oturumundan okunur.** Windows'ta SMTC, Linux'ta MPRIS.
+4. **Telefondan BLE ile ayar yapilmayacak.** Ayar icin cihazin kendi web
+   arayuzu. BLE sadece iOS bildirimleri (ANCS) icin.
+5. **Hava durumu icin anahtarsiz kaynak:** Open-Meteo.
+
 ## Kapsam disi (istenmedikce ekleme)
 
 - Dokunmatik / XPT2046 kodu, donanimda yok, olculdu
-- LVGL
-- WiFi, BLE, USB MSC, vendor endpoint
+- LVGL, bu mimaride gerekmiyor
+- BLE ile telefondan ayar
+- Android bildirimleri
+- Bagimsiz modda borsa, takvim, e-posta (auth gerektiriyor, bagli modda kalir)
 - Arduino IDE ile ilgili dosya veya talimat
 - Elde olmayan komponent varsayimi
+- Seri uretim, sertifikasyon, kasa: yedi faz bittikten sonra
 
-## Sonraki asamalar
+## Mevcut kodun yeri
 
-Cihaz USB uzerinden bilgisayara baglanacak, bilgisayardaki uygulama ekran
-goruntusunu sikistirip gonderecek, cihaz sadece gelen bolgeleri ekrana basacak.
-Girdi olarak rotary encoder ve fiziksel butonlar eklenecek.
-
-Bu yuzden ekrana cizim isi `drawTestScreen()` ve `drawCounter()` icinde
-toplandi. `drawCounter()` zaten hedef akisin aynisi: sprite ile tampon
-hazirlanip tek seferde belirli bir dikdortgene basiliyor, tum ekran yeniden
-cizilmiyor. Simdilik soyut arayuz katmani yazilmayacak.
+Faz 0 ciktisi olan test firmware, gelecek mimarinin iskeletini tasiyor:
+`drawCounter()` zaten hedef akisin aynisi, yani sprite ile tampon hazirlanip
+tek seferde belirli bir dikdortgene basiliyor, tum ekran yeniden cizilmiyor.
+Faz 1'de bu yolun yerini USB protokolu alacak. Simdilik soyut arayuz katmani
+yazilmayacak.

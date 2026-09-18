@@ -197,6 +197,9 @@ yok. Kesmek geri donusu olmayan bir islem ve hicbir sey kazandirmaz.
 
 ## Sonraki asamalar
 
+Projenin yol haritasi, faz tanimlari ve her fazin cikis kriterleri
+[plans.md](plans.md) icinde.
+
 Cihaz ileride USB uzerinden bilgisayara baglanacak, bilgisayardaki uygulama
 ekran goruntusunu sikistirip gonderecek, cihaz sadece gelen bolgeleri ekrana
 basacak. Girdi olarak rotary encoder ve fiziksel butonlar eklenecek.
