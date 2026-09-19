@@ -328,8 +328,16 @@ disi).
 
 ### Cikis kriterleri
 
-- [ ] Uygulama Windows ve Linux'ta derleniyor ve calisiyor; macOS'ta en
-      azindan derleniyor ve temel metrikleri gosteriyor
+- [~] Uygulama Windows ve Linux'ta derleniyor ve calisiyor; macOS'ta en
+      azindan derleniyor ve temel metrikleri gosteriyor.
+      **Derleme uc platformda da yesil** (GitHub Actions, `b672075`):
+      ubuntu-latest, windows-latest, macos-latest. Testler Linux ve
+      Windows'ta kosuluyor ve geciyor; `sysinfo` testleri gercek CPU ve
+      bellek okudugu icin "calisiyor" tarafi da o iki platformda
+      kanitli. **Kalan:** macOS'ta temel metriklerin gercekten
+      goruntulendigi elle dogrulanmadi, ve Linux'ta cihaz takili gercek
+      bir kosu yapilmadi. Ikisi de kullanicinin elindeki donanimla
+      yapilacak.
 - [ ] Cihaz takilinca otomatik bulunuyor, cikarilinca uygulama cokmuyor,
       tekrar takilinca kendiliginden baglaniyor. Bu dongu 20 kez arka arkaya
       sorunsuz.
