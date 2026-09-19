@@ -8,13 +8,14 @@
 use std::time::Duration;
 
 use crate::register_widget;
-use crate::render::{Canvas, Color, Rect};
+use crate::render::{Canvas, Color, FontKind, Rect};
+use crate::theme;
 use crate::widget::{Context, Widget};
 
-const COLOR_BG: Color = Color::rgb(20, 24, 30);
-const COLOR_LABEL: Color = Color::rgb(120, 130, 150);
-const COLOR_VALUE: Color = Color::rgb(200, 210, 224);
-const COLOR_BAR: Color = Color::rgb(64, 160, 220);
+const COLOR_BG: Color = theme::BG;
+const COLOR_LABEL: Color = theme::TEXT_FAINT;
+const COLOR_VALUE: Color = theme::TEXT;
+const COLOR_BAR: Color = theme::ACCENT;
 
 const LABEL_SIZE: f32 = 13.0;
 const VALUE_SIZE: f32 = 24.0;
@@ -54,6 +55,7 @@ impl Widget for Uptime {
             area.x + PAD,
             area.y + PAD,
             LABEL_SIZE,
+            FontKind::Sans,
             COLOR_LABEL,
         );
 
@@ -66,6 +68,7 @@ impl Widget for Uptime {
             area.x + PAD,
             area.y + PAD + LABEL_SIZE as u16 + PAD,
             VALUE_SIZE,
+            FontKind::Mono,
             COLOR_VALUE,
         );
 
@@ -76,7 +79,7 @@ impl Widget for Uptime {
         let bar_y = area.y + area.h.saturating_sub(PAD + BAR_HEIGHT);
         canvas.fill_rect(
             Rect::new(area.x + PAD, bar_y, inner, BAR_HEIGHT),
-            Color::rgb(38, 42, 54),
+            theme::TRACK,
         );
         canvas.fill_rect(
             Rect::new(area.x + PAD, bar_y, filled, BAR_HEIGHT),

@@ -53,8 +53,17 @@ impl Color {
 /// Her karede yeniden rasterlemek anlamsiz olurdu; onbellek olcumde
 /// 27 girisle doyuyor ve metin maliyetini kare basina 0.004 ms'e indiriyor.
 struct TextRenderer {
-    font: fontdue::Font,
-    cache: std::collections::HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>,
+    mono: fontdue::Font,
+    sans: fontdue::Font,
+    cache: std::collections::HashMap<(FontKind, char, u32), (fontdue::Metrics, Vec<u8>)>,
+}
+
+/// Hangi font. Rakamlar monospace ciziliyor: oranti fontunda rakam
+/// genislikleri farkli oldugu icin saat her saniye yatay zipliyor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontKind {
+    Mono,
+    Sans,
 }
 
 /// Gomulu font yok: sistem fontu araniyor.
@@ -62,28 +71,49 @@ struct TextRenderer {
 /// Faz 4'un piksel karsilastirmasi ayni makinede ayni cekirdegi
 /// kullandigi icin bu yeterli. Makineler arasi birebir ayni goruntu
 /// gerekirse font gomulmeli, o zaman lisans da secilmeli.
-const FONT_CANDIDATES: &[&str] = &[
+const MONO_CANDIDATES: &[&str] = &[
     "C:/Windows/Fonts/consola.ttf",
-    "C:/Windows/Fonts/segoeui.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
     "/System/Library/Fonts/Menlo.ttc",
 ];
 
-impl TextRenderer {
-    fn load() -> Option<TextRenderer> {
-        for path in FONT_CANDIDATES {
-            if let Ok(bytes) = std::fs::read(path) {
-                if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-                {
-                    return Some(TextRenderer {
-                        font,
-                        cache: std::collections::HashMap::new(),
-                    });
-                }
+const SANS_CANDIDATES: &[&str] = &[
+    "C:/Windows/Fonts/segoeui.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+];
+
+fn load_font(candidates: &[&str]) -> Option<fontdue::Font> {
+    for path in candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Ok(f) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+                return Some(f);
             }
         }
-        None
+    }
+    None
+}
+
+impl TextRenderer {
+    fn load() -> Option<TextRenderer> {
+        let mono = load_font(MONO_CANDIDATES)?;
+        // Oranti fontu bulunamazsa monospace'e dusuyoruz: metin
+        // kaybolmasin, sadece daha az guzel gorunsun.
+        let sans = load_font(SANS_CANDIDATES).unwrap_or_else(|| mono.clone());
+        Some(TextRenderer {
+            mono,
+            sans,
+            cache: std::collections::HashMap::new(),
+        })
+    }
+
+    fn font(&self, kind: FontKind) -> &fontdue::Font {
+        match kind {
+            FontKind::Mono => &self.mono,
+            FontKind::Sans => &self.sans,
+        }
     }
 }
 
@@ -161,7 +191,7 @@ impl Canvas {
     /// Metin cizer ve bittigi x konumunu doner.
     ///
     /// `y` metnin ust kenari. Font yoksa hicbir sey cizilmez ve `x` doner.
-    pub fn text(&mut self, s: &str, x: u16, y: u16, size: f32, c: Color) -> u16 {
+    pub fn text(&mut self, s: &str, x: u16, y: u16, size: f32, kind: FontKind, c: Color) -> u16 {
         let Some(tr) = self.text.as_mut() else {
             return x;
         };
@@ -169,10 +199,16 @@ impl Canvas {
         let mut pen = x as i32;
         let data = self.pm.data_mut();
         for ch in s.chars() {
-            let (m, bitmap) = tr
-                .cache
-                .entry((ch, key_size))
-                .or_insert_with(|| tr.font.rasterize(ch, size));
+            let (m, bitmap) = match tr.cache.entry((kind, ch, key_size)) {
+                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let g = match kind {
+                        FontKind::Mono => tr.mono.rasterize(ch, size),
+                        FontKind::Sans => tr.sans.rasterize(ch, size),
+                    };
+                    e.insert(g)
+                }
+            };
             for gy in 0..m.height {
                 let py = y as i32 + gy as i32 - m.height as i32 - m.ymin + size as i32;
                 if py < 0 || py >= self.height as i32 {
@@ -202,20 +238,39 @@ impl Canvas {
     }
 
     /// Metnin cizilmeden genisligini olcer. Tasma kontrolu icin.
-    pub fn text_width(&mut self, s: &str, size: f32) -> u16 {
-        let Some(tr) = self.text.as_mut() else {
+    pub fn text_width(&mut self, s: &str, size: f32, kind: FontKind) -> u16 {
+        let Some(tr) = self.text.as_ref() else {
             return 0;
         };
-        let key_size = (size * 10.0) as u32;
+        let font = tr.font(kind);
         let mut w = 0f32;
         for ch in s.chars() {
-            let (m, _) = tr
-                .cache
-                .entry((ch, key_size))
-                .or_insert_with(|| tr.font.rasterize(ch, size));
-            w += m.advance_width;
+            w += font.metrics(ch, size).advance_width;
         }
-        w as u16
+        w.ceil() as u16
+    }
+
+    /// Sagdan hizali metin. Saga yaslanmis detaylar icin.
+    pub fn text_right(
+        &mut self,
+        s: &str,
+        right_x: u16,
+        y: u16,
+        size: f32,
+        kind: FontKind,
+        c: Color,
+    ) {
+        let w = self.text_width(s, size, kind);
+        self.text(s, right_x.saturating_sub(w), y, size, kind, c);
+    }
+
+    /// Tuvali PNG olarak diske yazar.
+    ///
+    /// Onizleme ve tasarim kontrolu icin. Faz 4'un "onizleme ile cihaz
+    /// birebir ayni" kriteri de ayni tuvali kullanacak, yani burada
+    /// gordugumuz sey cihazda gorunenin ta kendisi.
+    pub fn save_png(&self, path: &str) -> Result<(), String> {
+        self.pm.save_png(path).map_err(|e| e.to_string())
     }
 
     /// Tuvali RGB565'e cevirir. `dst` tuval piksel sayisi kadar olmali.

@@ -206,6 +206,11 @@ impl Engine {
         self.sensors.snapshot()
     }
 
+    /// Son cizilen kareyi PNG olarak yazar. Tasarim kontrolu icin.
+    pub fn save_png(&self, path: &str) -> Result<(), String> {
+        self.canvas.save_png(path)
+    }
+
     /// Son uretilen kare, RGB565. Onizleme de bunu gosterecek.
     pub fn frame(&self) -> &[u16] {
         &self.frame
@@ -245,10 +250,10 @@ fn overlaps(a: Rect, b: Rect) -> bool {
 /// Faz 2'nin varsayilan yerlesimi: ustte saat, altta calisma suresi.
 /// Gercek yerlesim motoru Faz 4'un isi, bu sadece bir baslangic.
 pub fn default_layout(width: u16, height: u16) -> Vec<Slot> {
-    let clock_h = height / 3;
+    let header = crate::theme::HEADER_H.min(height);
     vec![
-        Slot::new("clock", Rect::new(0, 0, width, clock_h)),
-        Slot::new("sysinfo", Rect::new(0, clock_h, width, height - clock_h)),
+        Slot::new("clock", Rect::new(0, 0, width, header)),
+        Slot::new("sysinfo", Rect::new(0, header, width, height - header)),
     ]
 }
 

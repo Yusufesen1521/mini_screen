@@ -1,28 +1,64 @@
-//! Saat widget'i.
+//! Saat, baslik seridi olarak.
 //!
-//! Ilk gercek widget. Saniyede bir degistigi icin dirty tracking'i
-//! gostermek icin de uygun: iki saniye arasinda ekranda hicbir sey
-//! degismiyor ve trafik sifira dusuyor.
+//! Ekranin ust bandini kapliyor: solda buyuk saat, sagda gun ve tarih.
+//! Saat monospace ciziliyor, cunku oranti fontunda rakam genislikleri
+//! farkli oldugu icin sayi her saniye yatay zipliyor.
+//!
+//! Turkce karakterler diyakritikli yaziliyor. Faz 3'un "Turkce
+//! karakterler dogru goruntuleniyor" kriterini simdiden zorluyor.
 
 use std::time::Duration;
 
 use crate::register_widget;
-use crate::render::{Canvas, Color, Rect};
+use crate::render::{Canvas, FontKind, Rect};
+use crate::theme;
 use crate::widget::{Context, Widget};
 
-const COLOR_BG: Color = Color::rgb(16, 18, 24);
-const COLOR_TIME: Color = Color::rgb(232, 236, 244);
-const COLOR_DATE: Color = Color::rgb(120, 130, 150);
+/// Saat ile saniye arasindaki bosluk.
+const SEC_GAP: u16 = 4;
+/// Saniye, saat ve dakikadan kucuk. Boylece goz once saate gidiyor.
+const SIZE_SECONDS: f32 = 17.0;
+/// Baslik altindaki vurgu cizgisi.
+const RULE_H: u16 = 2;
 
-const TIME_SIZE: f32 = 56.0;
-const DATE_SIZE: f32 = 16.0;
-/// Saat ile tarih arasindaki bosluk.
-const GAP: u16 = 8;
-
-const AY_ADLARI: [&str; 12] = [
-    "Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran", "Temmuz",
-    "Agustos", "Eylul", "Ekim", "Kasim", "Aralik",
+const GUNLER: [&str; 7] = [
+    "Pazartesi",
+    "Salı",
+    "Çarşamba",
+    "Perşembe",
+    "Cuma",
+    "Cumartesi",
+    "Pazar",
 ];
+
+const AYLAR: [&str; 12] = [
+    "Ocak",
+    "Şubat",
+    "Mart",
+    "Nisan",
+    "Mayıs",
+    "Haziran",
+    "Temmuz",
+    "Ağustos",
+    "Eylül",
+    "Ekim",
+    "Kasım",
+    "Aralık",
+];
+
+/// Zeller benzeri basit hafta gunu hesabi. 1 Ocak 2000 Cumartesi.
+fn weekday_index(y: i32, m: u8, d: u8) -> usize {
+    let (mut y, mut m) = (y, m as i32);
+    if m < 3 {
+        y -= 1;
+        m += 12;
+    }
+    let k = y % 100;
+    let j = y / 100;
+    let h = (d as i32 + 13 * (m + 1) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
+    // Zeller 0 = Cumartesi. Bizim dizi Pazartesi ile basliyor.
+    ((h + 5) % 7) as usize
+}
 
 #[derive(Default)]
 pub struct Clock {
@@ -40,8 +76,6 @@ impl Widget for Clock {
     }
 
     fn update(&mut self, ctx: &Context<'_>) -> bool {
-        // Saniye degismediyse cizmeye gerek yok. Rasterleme maliyetini
-        // burada kesmek dirty tracking'den once geliyor.
         if ctx.local_hms == self.hms && ctx.local_ymd == self.ymd {
             return false;
         }
@@ -51,34 +85,71 @@ impl Widget for Clock {
     }
 
     fn render(&mut self, canvas: &mut Canvas, area: Rect, _ctx: &Context<'_>) {
-        canvas.fill_rect(area, COLOR_BG);
+        canvas.fill_rect(area, theme::BG_HEADER);
+        canvas.fill_rect(
+            Rect::new(area.x, area.y + area.h - RULE_H, area.w, RULE_H),
+            theme::ACCENT,
+        );
 
         let (h, m, s) = self.hms;
-        let time = format!("{:02}:{:02}:{:02}", h, m, s);
         let (y, mo, d) = self.ymd;
-        let ay = AY_ADLARI[(mo.clamp(1, 12) - 1) as usize];
-        let date = format!("{} {} {}", d, ay, y);
 
-        let tw = canvas.text_width(&time, TIME_SIZE);
-        let dw = canvas.text_width(&date, DATE_SIZE);
-        let block_h = TIME_SIZE as u16 + GAP + DATE_SIZE as u16;
-        let top = area.y + area.h.saturating_sub(block_h) / 2;
-
-        canvas.text(
-            &time,
-            area.x + area.w.saturating_sub(tw) / 2,
-            top,
-            TIME_SIZE,
-            COLOR_TIME,
+        // Saat ve dakika buyuk, saniye kucuk ve soluk.
+        let hhmm = format!("{:02}:{:02}", h, m);
+        let baseline = area.y + 12;
+        let end = canvas.text(
+            &hhmm,
+            area.x + theme::SCREEN_PAD,
+            baseline,
+            theme::SIZE_CLOCK,
+            FontKind::Mono,
+            theme::TEXT,
         );
         canvas.text(
-            &date,
-            area.x + area.w.saturating_sub(dw) / 2,
-            top + TIME_SIZE as u16 + GAP,
-            DATE_SIZE,
-            COLOR_DATE,
+            &format!("{:02}", s),
+            end + SEC_GAP,
+            baseline + (theme::SIZE_CLOCK - SIZE_SECONDS) as u16 - 4,
+            SIZE_SECONDS,
+            FontKind::Mono,
+            theme::TEXT_DIM,
+        );
+
+        // Sagda gun ve tarih, iki satir.
+        let right = area.x + area.w - theme::SCREEN_PAD;
+        let gun = GUNLER[weekday_index(y, mo, d)];
+        let ay = AYLAR[(mo.clamp(1, 12) - 1) as usize];
+        canvas.text_right(
+            gun,
+            right,
+            area.y + 16,
+            theme::SIZE_WEEKDAY,
+            FontKind::Sans,
+            theme::TEXT_FAINT,
+        );
+        canvas.text_right(
+            &format!("{} {} {}", d, ay, y),
+            right,
+            area.y + 32,
+            theme::SIZE_DATE,
+            FontKind::Sans,
+            theme::TEXT_DIM,
         );
     }
 }
 
 register_widget!("clock", Clock);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hafta_gunu_dogru() {
+        // 19 Eylul 2026 Cumartesi.
+        assert_eq!(GUNLER[weekday_index(2026, 9, 19)], "Cumartesi");
+        // 1 Ocak 2000 Cumartesi.
+        assert_eq!(GUNLER[weekday_index(2000, 1, 1)], "Cumartesi");
+        // 29 Subat 2024 Persembe, artik yil kontrolu.
+        assert_eq!(GUNLER[weekday_index(2024, 2, 29)], "Perşembe");
+    }
+}

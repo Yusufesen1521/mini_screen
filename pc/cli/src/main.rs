@@ -31,7 +31,12 @@ fn main() -> anyhow::Result<()> {
         "status" => cmd_status(port.as_deref()),
         "widgets" => cmd_widgets(),
         "sensors" => cmd_sensors(),
-        "run" => cmd_run(port.as_deref(), seconds, args.iter().any(|a| a == "--static")),
+        "preview" => cmd_preview(args.get(2).map(|s| s.as_str()).unwrap_or("preview.png")),
+        "run" => cmd_run(
+            port.as_deref(),
+            seconds,
+            args.iter().any(|a| a == "--static"),
+        ),
         _ => {
             print_help();
             Ok(())
@@ -54,6 +59,7 @@ fn print_help() {
     println!("  mscreen widgets            kayitli widget turlerini listeler");
     println!("  mscreen sensors            sensor kaynaklarini yoklar ve okur");
     println!("  mscreen run                cizim dongusunu baslatir");
+    println!("  mscreen preview [dosya]    bir kare cizip PNG olarak yazar");
     println!("\n  --port <ad>                portu elle verir");
     println!("  --seconds <n>              run icin sure siniri, 0 = sinirsiz");
     println!("  --static                   olcum kipi: ekrani dondurup trafigi olcer");
@@ -130,6 +136,26 @@ fn pair(used: Option<u64>, total: Option<u64>) -> Option<String> {
         )),
         _ => None,
     }
+}
+
+/// Cihaz olmadan bir kare cizer. Tasarimi gozle kontrol etmek icin.
+fn cmd_preview(path: &str) -> anyhow::Result<()> {
+    use mini_screen_core::{SCREEN_HEIGHT, SCREEN_WIDTH};
+
+    let layout = default_layout(SCREEN_WIDTH, SCREEN_HEIGHT);
+    let mut engine = Engine::new(SCREEN_WIDTH, SCREEN_HEIGHT, &layout)?;
+    if !engine.has_font() {
+        println!("UYARI: sistem fontu bulunamadi, metin cizilmeyecek.");
+    }
+    // Sensorlerin ilk degerlerini alabilmesi icin birkac tur.
+    let mut dirty = Vec::new();
+    for _ in 0..3 {
+        engine.tick(&mut dirty);
+        std::thread::sleep(Duration::from_millis(600));
+    }
+    engine.save_png(path).map_err(|e| anyhow::anyhow!(e))?;
+    println!("yazildi: {}", path);
+    Ok(())
 }
 
 fn cmd_hello(port: Option<&str>) -> anyhow::Result<()> {
