@@ -60,6 +60,11 @@ static QueueHandle_t pushQueue = nullptr;   // PushJob
 static QueueHandle_t freeBufs = nullptr;    // uint8_t, bos tampon indeksi
 
 static bool     connected = false;
+// Bekleme ekrani durumu ve son gecerli mesajin zamani. lastMsgMs sifir
+// kaldigi surece PC hic baglanmamis demektir, o zaman acilis ekrani
+// duruyor ve bekleme ekranina gecmenin anlami yok.
+static bool     standby = false;
+static uint32_t lastMsgMs = 0;
 static bool     selfTestOk = false;
 static uint32_t lastRegionUs = 0;
 
@@ -286,11 +291,51 @@ static bool handleRegion(const uint8_t *payload, uint16_t len, uint8_t seq, bool
 // Cerceve dagitimi
 // ---------------------------------------------------------------------------
 
+// Bekleme ekranina gecis ve cikis.
+//
+// Cihaz bagli modda aptal bir cerceve, ama PC gidince donmus son
+// kareyle kalmamali. Cikis kriteri bunu istiyor.
+
+static void drawStandby()
+{
+  tft.fillScreen(COLOR_BACKGROUND);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
+  tft.drawString(STANDBY_TITLE, SCREEN_WIDTH / 2, STANDBY_TITLE_Y, FONT_TITLE);
+  tft.setTextColor(COLOR_DIM_TEXT, COLOR_BACKGROUND);
+  tft.drawString(STANDBY_HINT, SCREEN_WIDTH / 2, STANDBY_HINT_Y, FONT_LABEL);
+  tft.setTextDatum(TL_DATUM);
+}
+
+static void enterStandby()
+{
+  standby = true;
+  // connected sifirlaniyor ki PC geri gelince HELLO ekrani temizlesin
+  // ve bekleme ekraninin kalintisi kalmasin.
+  connected = false;
+  drawStandby();
+  backlightSet(BL_BRIGHTNESS_STANDBY);
+}
+
+static void exitStandby()
+{
+  standby = false;
+  backlightSet(BL_BRIGHTNESS_DEFAULT);
+}
+
 static void onFrame(uint8_t type, uint8_t flags, uint8_t seq,
                     const uint8_t *payload, uint16_t len, void *ctx)
 {
   (void)ctx;
   bool ok = true;
+
+  // Herhangi bir gecerli mesaj baglantinin canli oldugunu gosteriyor.
+  // Sadece FRAME_REGION'a bakmak yetmez: ekran durgunken PC dirty
+  // tracking yuzunden uzun sure cerceve gondermiyor.
+  lastMsgMs = millis();
+  if (standby) {
+    exitStandby();
+  }
 
   switch (type) {
     case MSG_HELLO:
@@ -537,4 +582,19 @@ void loop()
   }
 
   framer.poll(millis());
+
+  // PC gitti mi. Tek olcut: belirli sure hicbir gecerli mesaj gelmemesi.
+  //
+  // **`!Serial` kullanmayin.** HWCDC'nin baglilik durumu denendi ve
+  // guvenilmez cikti: aktif trafik sirasinda, son mesajin uzerinden
+  // 43 ms gecmisken bile "port kapali" dedi. Cihaz saniyeler icinde
+  // beklemeye girip cikti, arka isik kirpti ve panel gorunmez oldu.
+  // Olculdu, sebep kaydedildi, kaldirildi.
+  if (!standby && lastMsgMs != 0) {
+    const uint32_t idleMs = millis() - lastMsgMs;
+    if (idleMs > LINK_IDLE_TIMEOUT_MS) {
+      logPrintf("baglanti yok, %u ms sessizlik\n", (unsigned)idleMs);
+      enterStandby();
+    }
+  }
 }

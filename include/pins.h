@@ -65,6 +65,9 @@
 // Gozle secilen varsayilan. 200 sonuk bulundu, 255 ise titremeyi
 // belirginlestiriyor; 180-220 araligi gercek icerikte iyi calisiyor.
 #define BL_BRIGHTNESS_DEFAULT   220
+// Bekleme ekraninda arka isik kisiliyor ama sondurulmuyor: cihazin
+// canli oldugu gorunsun, sadece dikkat cekmesin.
+#define BL_BRIGHTNESS_STANDBY   70
 
 // Acilis darbesi: ekran hic goruntu vermese bile firmware calistigini ve
 // arka isik hattinin saglam oldugunu gozle dogrulamak icin.
@@ -131,6 +134,27 @@
 // Acilis ekranindaki durum yazisi. PC baglandiginda ekran temizlenir ve
 // bundan sonrasini PC cizer.
 #define SPLASH_TEXT        "PC BEKLENIYOR (USB)"
+
+// Bekleme ekrani. PC uygulamasi kapandiginda ya da olduginde cihaz
+// donmus son kareyle kalmasin diye buraya duser.
+//
+// Neden zaman asimi, neden baska bir sey degil:
+//
+// Dirty tracking sayesinde ekran degismiyorken PC dakikalarca hicbir
+// sey gondermiyor ve bu normal. Bu yuzden sayac herhangi bir gecerli
+// mesajla sifirlaniyor ve PC bostayken PING gonderiyor.
+//
+// CDC baglilik durumu (`!Serial`) denendi ve guvenilmez cikti: aktif
+// trafik sirasinda, son mesajin uzerinden 43 ms gecmisken bile "port
+// kapali" dedi. Tek olcut sessizlik suresi.
+//
+// PC tarafindaki PING araligi bunun ucte biri civarinda olmali,
+// su an 1500 ms.
+#define LINK_IDLE_TIMEOUT_MS   4000
+#define STANDBY_TITLE      "BAGLANTI YOK"
+#define STANDBY_HINT       "PC uygulamasi calismiyor"
+#define STANDBY_TITLE_Y    100
+#define STANDBY_HINT_Y     134
 #define SPLASH_X           8
 #define SPLASH_Y           160
 

@@ -17,6 +17,8 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 const ACK_TIMEOUT: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 4096;
+/// Inbox'ta en fazla bu kadar islenmemis cerceve tutulur.
+const INBOX_LIMIT: usize = 64;
 /// Onay beklerken bos dongu yapmamak icin kisa uyku.
 const POLL_IDLE_SLEEP: Duration = Duration::from_millis(1);
 /// Yeniden baglanma denemeleri arasindaki bekleme.
@@ -311,6 +313,7 @@ impl Link {
                 self.inbox.push(f);
             }
         }
+        self.trim_inbox();
         Ok(())
     }
 
@@ -335,6 +338,13 @@ impl Link {
                     }
                     self.inbox.remove(i);
                     progressed = true;
+                }
+                // PONG canlilik isaretinin cevabi, beklenen bir sey ama
+                // islenecek bir tarafi yok. Birakirsak inbox sonsuza
+                // kadar buyuyor: PING saniyede bir gidiyor ve her biri
+                // bir PONG doguruyor.
+                p::MSG_PONG => {
+                    self.inbox.remove(i);
                 }
                 _ => i += 1,
             }
@@ -434,6 +444,21 @@ impl Link {
         Ok(true)
     }
 
+    /// Canlilik isareti. Cihaz mesaj gelmezse bekleme ekranina dusuyor;
+    /// dirty tracking yuzunden ekran durgunken hic cerceve gitmedigi
+    /// icin bu gerekli. Ayrintisi `include/pins.h` icinde
+    /// `LINK_IDLE_TIMEOUT_MS` uzerinde.
+    pub fn ping(&mut self) -> Result<(), LinkError> {
+        let seq = self.next_seq();
+        let mut frame = std::mem::take(&mut self.frame_buf);
+        p::build_frame_into(&mut frame, p::MSG_PING, seq, &[], 0);
+        let res = self.port.write_all(&frame);
+        self.stats.bytes_sent += frame.len() as u64;
+        self.frame_buf = frame;
+        res?;
+        Ok(())
+    }
+
     pub fn set_backlight(&mut self, level: u8) -> Result<(), LinkError> {
         let seq = self.next_seq();
         let mut frame = std::mem::take(&mut self.frame_buf);
@@ -465,5 +490,17 @@ impl Link {
 
     pub fn take_logs(&mut self) -> Vec<String> {
         std::mem::take(&mut self.logs)
+    }
+
+    /// Kimsenin almadigi cerceveleri atar.
+    ///
+    /// `inbox` sadece bekleyen bir cevap icin tutuluyor; okunmayan bir
+    /// tur birikirse bellek sizar. Bu yuzden kutu bir siniri asarsa en
+    /// eskiler dusuruluyor.
+    fn trim_inbox(&mut self) {
+        if self.inbox.len() > INBOX_LIMIT {
+            let excess = self.inbox.len() - INBOX_LIMIT;
+            self.inbox.drain(..excess);
+        }
     }
 }

@@ -15,6 +15,9 @@ const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
 /// Tur arasi bekleme. Widget'lar kendi araliklarini ayrica sinirliyor.
 const TICK_SLEEP: Duration = Duration::from_millis(20);
 const STATS_PERIOD: Duration = Duration::from_secs(5);
+/// Bosta canlilik isareti araligi. Cihazin zaman asimi 4 saniye,
+/// bu deger ona gore rahat bir pay birakiyor.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1500);
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -274,6 +277,7 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
     let mut pixels: Vec<u16> = Vec::new();
 
     let start = Instant::now();
+    let mut last_sent = Instant::now();
     let mut frozen = false;
     let mut window_start = start;
     let mut window_bytes = 0u64;
@@ -289,6 +293,9 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
         // Gonderecek bir sey olmasa bile porttan okunmali, yoksa
         // cihazin TX tamponu tasiyor. Gerekcesi Link::poll uzerinde.
         link.poll()?;
+        for line in link.take_logs() {
+            println!("  [cihaz] {}", line);
+        }
 
         // Olcum kipinde ilk kare gittikten sonra ekrani donduruyoruz.
         if static_mode && !frozen && start.elapsed() >= Duration::from_secs(2) {
@@ -316,6 +323,18 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
         }
         window_bytes += link.stats.bytes_sent - before;
         window_rects += dirty.len() as u64;
+
+        // Bir sey gonderdiysek sayaci sifirla, yoksa zamani gelince
+        // canlilik isareti at. Cihaz mesaj gelmezse bekleme ekranina
+        // dusuyor ve durgun ekranda hic cerceve gitmiyor.
+        if !dirty.is_empty() {
+            last_sent = Instant::now();
+        } else if last_sent.elapsed() >= KEEPALIVE_INTERVAL {
+            let before_ping = link.stats.bytes_sent;
+            link.ping()?;
+            window_bytes += link.stats.bytes_sent - before_ping;
+            last_sent = Instant::now();
+        }
 
         if window_start.elapsed() >= STATS_PERIOD {
             let secs = window_start.elapsed().as_secs_f64();
