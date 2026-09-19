@@ -327,3 +327,72 @@ Sonrasinda uc kosu da tekrarlanabilir cikti.
 Bu, tek gorevliyken gorunmeyen ama es zamanlilik gelince ortaya cikan
 turden bir hata. Ileride cihaza baska bir gorev eklenirse ayni tuzak
 gecerli: **protokol cercevesi tek parca ve kilit altinda gonderilmeli.**
+
+---
+
+## Faz 1: Dayaniklilik testi
+
+Tarih: 2026-09-19
+
+### Ilk kosu: 30 dakika
+
+| | |
+|---|---|
+| Sure | 30.0 dk |
+| Islenen cerceve | 25805 |
+| Dusen | **0** |
+| Baslik CRC hatasi | **0** |
+| Payload CRC hatasi | **0** |
+| Senkron kaybi | **0** |
+
+Guvenilirlik tarafi tam. Ama olculen FPS zamanla 19.7'den 2.7'ye dustu ve
+bu once cihazda bir birikim gibi gorundu.
+
+**Sebep cihaz degil, test araciydi.** Dayaniklilik testi "veri statik
+olmasin" diye her karede bir pikseli rastgeleye ceviriyordu. Kumulatif
+oldugu icin goruntu yavas yavas gurultuye donustu:
+
+| Kare | Tel bayt | Sikisma |
+|---|---|---|
+| 0 | 7296 | 21.1x |
+| 500 | 9788 | 15.7x |
+| 2000 | 17693 | 8.7x |
+| 8601 | 56082 | 2.7x |
+
+Hesap birebir tutuyor: 56082 bayt / 0.15 MB/s = 374 ms = 2.7 FPS, olculen
+de 2.7. Basta 7296 / 0.15 = 49 ms = 20.5 FPS, olculen 19.7. Yani baglanti
+30 dakika boyunca sabit kaldi, sadece yuk buyudu.
+
+Test araci donen bir animasyon setine cevrildi, sikisma artik sabit.
+
+### Duzeltilmis kosu: 5 dakika
+
+| | |
+|---|---|
+| Gonderilen kare | 6602 |
+| Cihazin isledigi bolge | 19809 (= 6603 x 3, birebir tutuyor) |
+| Ortalama | 0.16 MB/s, **22.0 FPS** |
+| Dusen / CRC / senkron | **0 / 0 / 0** |
+| NACK / ACK zaman asimi | **0 / 0** |
+| Heap | 352928 -> 352928 (**+0 bayt**) |
+| PSRAM | 8000863 -> 8000863 (**+0 bayt**) |
+
+Kare hizi bastan sona duz: 30 saniyelik dilimlerde 632, 637, 638, 644,
+635, 632, 616, 689, 742. Birikim yok.
+
+### Not: olcum araci da test edilmeli
+
+Bu bolumde iki ayri hata test aracindaydi, cihazda degil: kumulatif
+gurultu ve `frames` sayacinin iki kez artirilmasi (PC 14562 kare
+sayarken cihaz 7282 islemisti, tam iki kati). Ikincisi cihaz sayaciyla
+karsilastirilinca yakalandi.
+
+**Ders: PC tarafinin saydigi ile cihazin saydigi her kosuda
+karsilastirilmali.** Tutmuyorsa once araci suphelen.
+
+### Kalan
+
+30 dakikalik kosu duzeltilmis aracla tekrarlanmali. Ilk kosu guvenilirlik
+kriterini zaten gecti (25805 cerceve, sifir hata) ve ustelik yuk buyudugu
+icin daha zor kosullarda gecti; yine de duzgun sayilarla bir kez daha
+kosulmali.

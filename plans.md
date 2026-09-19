@@ -159,25 +159,25 @@ Bu olcumun protokole etkisi:
 
 ### Cikis kriterleri
 
-- [ ] PC'den 320x240 tam kare gonderimi calisiyor, olculen FPS belgelenmis.
+- [x] PC'den 320x240 tam kare gonderimi calisiyor, olculen FPS belgelenmis.
       Beklenti: ham veride 5-7 FPS (USB Full Speed siniri), UI benzeri
       icerikte RLE ile 25 FPS ustu.
-- [ ] Bolgesel guncelleme keyfi (x, y, w, h) dikdortgen ile calisiyor
-- [ ] Sinir kontrolu: ekran disina tasan istek reddediliyor, NACK donuyor,
+- [x] Bolgesel guncelleme keyfi (x, y, w, h) dikdortgen ile calisiyor
+- [x] Sinir kontrolu: ekran disina tasan istek reddediliyor, NACK donuyor,
       cihaz cokmuyor
 - [ ] 30 dakika kesintisiz akis: senkron kaybi yok, CRC hatasi yok
-- [ ] Bellek sizintisi yok: test basindaki ve sonundaki bos heap farki
+- [x] Bellek sizintisi yok (5 dk kosuda +0 bayt): test basindaki ve sonundaki bos heap farki
       yuzde 1'in altinda
 - [ ] Kablo akis ortasinda cekilip takildiginda cihaz kendini topluyor,
       reset gerekmiyor
-- [ ] Kasitli bozuk cerceve enjekte edildiginde cihaz cokmuyor, NACK donuyor
+- [x] Kasitli bozuk cerceve enjekte edildiginde cihaz cokmuyor, NACK donuyor
       ve sonraki gecerli cerceveyi isliyor
-- [ ] Protokol surum alani calisiyor: eski cihaz yeni PC ile konusursa
+- [x] Protokol surum alani calisiyor: eski cihaz yeni PC ile konusursa
       ikisi de temiz hata veriyor, tanimsiz davranis yok
 - [ ] 100 bin cerceve boyunca CRC hata sayisi 0
 - [ ] GIF flash'tan oynuyor, kare zamanlamasi GIF'in kendi suresine yuzde 10
       dogrulukla uyuyor
-- [ ] `docs/protocol.md` yazilmis ve gercek kodla uyumlu
+- [x] `docs/protocol.md` yazilmis ve gercek kodla uyumlu
 
 ### Bilinen riskler
 

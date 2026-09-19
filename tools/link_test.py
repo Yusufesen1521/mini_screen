@@ -62,6 +62,7 @@ class Link:
         self.pending = []      # onay bekleyen seq listesi
         self.nacks = 0
         self.ack_timeouts = 0
+        self.last_heap = None
 
     def next_seq(self):
         s = self.seq
@@ -141,12 +142,18 @@ class Link:
                 break
         return frames
 
-    @staticmethod
-    def _print_log(payload):
+    def _print_log(self, payload):
         text = payload.decode("utf-8", "replace")
         for line in text.splitlines():
-            if line.strip():
-                print("  [cihaz] %s" % line)
+            if not line.strip():
+                continue
+            if line.startswith("heap "):
+                parts = line.split()
+                try:
+                    self.last_heap = (int(parts[1]), int(parts[3]))
+                except (IndexError, ValueError):
+                    pass
+            print("  [cihaz] %s" % line)
 
     def expect(self, msg_type, timeout=1.0):
         for f in self.poll(timeout):
@@ -458,11 +465,41 @@ def cmd_conformance(args):
     return 1 if failed else 0
 
 
+ANIM_FRAMES = 8
+
+
+def build_animation(w, h):
+    """Donen kare seti. Her karede kucuk bir blok yer degistiriyor.
+
+    Ilk surumde her karede bir piksel rastgeleye ceviriliyordu, veri
+    statik olmasin diye. Kumulatif oldugu icin 8600 kare sonra
+    goruntunun yuzde 11'i gurultuye donusmus, sikisma 21 kattan 2.7 kata
+    inmis ve olculen FPS 19.7'den 2.7'ye dusmustu. Cihazda hicbir
+    yavaslama yoktu, sadece yuk buyuyordu. Donen set bunu onluyor:
+    sikisma sabit kaliyor.
+    """
+    base = image_ui(w, h)
+    block = 40
+    color = rgb565(250, 250, 80)
+    out = []
+    for i in range(ANIM_FRAMES):
+        px = list(base)
+        x0 = 16 + i * ((w - block - 32) // max(ANIM_FRAMES - 1, 1))
+        y0 = h // 2
+        for y in range(y0, min(y0 + block, h)):
+            row = y * w
+            for x in range(x0, min(x0 + block, w)):
+                px[row + x] = color
+        out.append((px, build_stripes(px, w, h)))
+    return out
+
+
 def cmd_endurance(args):
     link = Link(open_link(args.port))
     caps = handshake(link, quiet=True)
     w, h = caps["w"], caps["h"]
-    px = image_ui(w, h)
+    print("Animasyon kareleri hazirlaniyor...")
+    anim = build_animation(w, h)
 
     deadline = time.time() + args.minutes * 60
     frames = 0
@@ -471,11 +508,14 @@ def cmd_endurance(args):
     last_report = start
 
     print("Dayaniklilik testi: %d dakika. Ctrl+C ile kesebilirsin.\n" % args.minutes)
+
+    link.send(P.MSG_GET_STATUS)
+    link.expect(P.MSG_STATUS, 2.0)
+    heap_start = link.last_heap
     try:
         while time.time() < deadline:
-            # Her karede degisen bir bolge olsun, statik veri olmasin
-            px[(frames * 977) % (w * h)] = (frames * 2654435761) & 0xFFFF
-            total += send_image(link, px, w, h)
+            px, stripes = anim[frames % ANIM_FRAMES]
+            total += send_image(link, px, w, h, stripes=stripes)
             frames += 1
 
             now = time.perf_counter()
@@ -500,6 +540,16 @@ def cmd_endurance(args):
         hdr_err, pl_err, sync = struct.unpack_from("<HHH", p, 8)
         print("Cihaz sayaclari : islenen=%d dusen=%d hdrCRC=%d payloadCRC=%d senkron=%d"
               % (ok, dropped, hdr_err, pl_err, sync))
+        print("PC tarafi     : NACK=%d ACK zaman asimi=%d pencere=%d"
+              % (link.nacks, link.ack_timeouts, link.window))
+        if heap_start and link.last_heap:
+            dh = link.last_heap[0] - heap_start[0]
+            print("Heap          : %d -> %d (%+d bayt, %%%.2f)"
+                  % (heap_start[0], link.last_heap[0], dh,
+                     100.0 * dh / heap_start[0]))
+            print("PSRAM         : %d -> %d (%+d bayt)"
+                  % (heap_start[1], link.last_heap[1],
+                     link.last_heap[1] - heap_start[1]))
         return 0 if (dropped == 0 and pl_err == 0 and sync == 0) else 1
     return 1
 
