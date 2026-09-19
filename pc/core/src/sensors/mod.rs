@@ -16,6 +16,7 @@
 
 use std::time::{Duration, Instant};
 
+pub mod afterburner;
 pub mod system;
 
 /// Butun sensor okumalarinin tek yerde toplandigi goruntu.

@@ -30,7 +30,7 @@ fn main() -> anyhow::Result<()> {
         "hello" => cmd_hello(port.as_deref()),
         "status" => cmd_status(port.as_deref()),
         "widgets" => cmd_widgets(),
-        "sensors" => cmd_sensors(),
+        "sensors" => cmd_sensors(args.iter().any(|a| a == "--dump")),
         "preview" => cmd_preview(args.get(2).map(|s| s.as_str()).unwrap_or("preview.png")),
         "run" => cmd_run(
             port.as_deref(),
@@ -58,6 +58,7 @@ fn print_help() {
     println!("  mscreen status             cihaz sayaclarini okur");
     println!("  mscreen widgets            kayitli widget turlerini listeler");
     println!("  mscreen sensors            sensor kaynaklarini yoklar ve okur");
+    println!("  mscreen sensors --dump     Afterburner girdilerini ham listeler");
     println!("  mscreen run                cizim dongusunu baslatir");
     println!("  mscreen preview [dosya]    bir kare cizip PNG olarak yazar");
     println!("\n  --port <ad>                portu elle verir");
@@ -90,8 +91,49 @@ fn cmd_widgets() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_sensors() -> anyhow::Result<()> {
-    use mini_screen_core::sensors::{Sensors, Snapshot};
+fn cmd_sensors(dump: bool) -> anyhow::Result<()> {
+    use mini_screen_core::sensors::{afterburner, Sensors, Snapshot};
+
+    if dump {
+        let entries = afterburner::AfterburnerSource::dump();
+        if entries.is_empty() {
+            match afterburner::AfterburnerSource::header() {
+                Some(h) => {
+                    println!("Esleme acildi ama girdi okunamadi. Ham baslik:");
+                    let adlar = [
+                        "imza",
+                        "surum",
+                        "baslik boyu",
+                        "girdi sayisi",
+                        "girdi boyu",
+                        "zaman",
+                        "gpu girdi sayisi",
+                        "gpu girdi boyu",
+                    ];
+                    for (i, v) in h.iter().enumerate() {
+                        println!("  {:<18} 0x{:08X}  ({})", adlar[i], v, v);
+                    }
+                    let sig = h[0].to_le_bytes();
+                    println!("  imza ASCII         {:?}", String::from_utf8_lossy(&sig));
+                }
+                None => println!("Afterburner paylasimli bellegi acilamadi."),
+            }
+            for (name, code) in afterburner::AfterburnerSource::diagnose() {
+                let aciklama = match code {
+                    2 => "ad bulunamadi (Afterburner kapali ya da baska ad alaninda)",
+                    5 => "erisim reddedildi (Afterburner yukseltilmis, biz degiliz)",
+                    _ => "bilinmeyen",
+                };
+                println!("  {:<28} hata {} : {}", name, code, aciklama);
+            }
+        } else {
+            println!("Afterburner girdileri ({} adet):", entries.len());
+            for (n, v, max) in entries {
+                println!("  {:<42} {:<14} ust sinir {}", n, v, max);
+            }
+        }
+        return Ok(());
+    }
 
     let mut s = Sensors::probe_all();
     println!("calisan kaynaklar : {:?}", s.active_names());
