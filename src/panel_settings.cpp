@@ -54,13 +54,18 @@ static const PanelValue kPower1[] = {
 
 #define COUNT_OF(a) ((uint8_t)(sizeof(a) / sizeof((a)[0])))
 
-// index alanlari gozle bulunan degerleri gosteriyor
+// index alanlari gozle bulunan nihai degerleri gosteriyor.
+//
+// Once sabit bir gri skala uzerinde, sonra gercek GIF iceriginde
+// dogrulandi. Sabit desende en iyi gorunen degerler (VCOM2 0x90,
+// VCOM1 2B 2B) hareketli icerikte ayni sonucu vermedi; asagidakiler
+// canli testin sonucu.
 PanelParam panelParams[] = {
-  { "VCOM2  (C7)", 0xC7, kVcom2,     COUNT_OF(kVcom2),     2 },  // 0x90
-  { "VCOM1  (C5)", 0xC5, kVcom1,     COUNT_OF(kVcom1),     2 },  // 2B 2B
+  { "VCOM2  (C7)", 0xC7, kVcom2,     COUNT_OF(kVcom2),     7 },  // 0xB8
+  { "VCOM1  (C5)", 0xC5, kVcom1,     COUNT_OF(kVcom1),     3 },  // 30 30
   { "KareHz (B1)", 0xB1, kFrameRate, COUNT_OF(kFrameRate), 2 },  // 112 Hz
-  { "Tersle (B4)", 0xB4, kInversion, COUNT_OF(kInversion), 0 },  // 0x02
-  { "Guc1   (C0)", 0xC0, kPower1,    COUNT_OF(kPower1),    0 },  // 0x23
+  { "Tersle (B4)", 0xB4, kInversion, COUNT_OF(kInversion), 0 },  // 0x02 stok
+  { "Guc1   (C0)", 0xC0, kPower1,    COUNT_OF(kPower1),    0 },  // 0x23 stok
 };
 
 const uint8_t panelParamCount = COUNT_OF(panelParams);

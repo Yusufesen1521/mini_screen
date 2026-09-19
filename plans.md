@@ -78,7 +78,7 @@ kriterlerinin tamaminin tek tek dogrulanmasi demek.
 | Faz | Is | Durum |
 |---|---|---|
 | 0 | Ekran dogrulama | Bitti |
-| 1 | Piksel hatti ve USB protokolu | Siradaki |
+| 1 | Piksel hatti ve USB protokolu | Neredeyse bitti |
 | 2 | PC uygulamasi iskeleti ve sistem degerleri | Bekliyor |
 | 3 | Medya widget'i | Bekliyor |
 | 4 | Layout ve ozellestirme motoru | Bekliyor |
@@ -149,6 +149,17 @@ Bu olcumun protokole etkisi:
   ekran goruntusu
 - FPS, MB/s, CRC hata sayisi raporlar
 
+**1.6 Panel register ayari** (bitti)
+- Ekranda polarite tersleme titremesi vardi: sabit ve koyu pikseller,
+  ozellikle yuksek parlaklikta, parliyor sonuyordu. Kaynagi TFT_eSPI'nin
+  jenerik VCOM varsayilanlari.
+- `env:paneltune` ile sabit bir gri skala uzerinde, sonra gercek GIF
+  iceriginde gozle ayarlandi. Ikinci adim gerekliydi: sabit desende en iyi
+  gorunen degerler hareketli icerikte tutmadi.
+- Secilen: VCOM2 0xB8, VCOM1 30 30, kare hizi 112 Hz. Parlaklik 220.
+- Kalan sinir: `rgb_test2.gif` klibinde 180 ustu parlaklikta titreme her
+  ayarla suruyor. TN panelin sinirlarindan biri kabul edildi.
+
 **1.5 Cihazda GIF oynatma** (bitti)
 - `AnimatedGIF` kutuphanesi, LittleFS uzerinden. Olcumler
   `docs/measurements.md` icinde.
@@ -185,6 +196,26 @@ Bu olcumun protokole etkisi:
 - [x] GIF flash'tan oynuyor, kare zamanlamasi GIF'in kendi suresine yuzde 10
       dogrulukla uyuyor (olculen 14.95-15.18 FPS, kaynak 15.0)
 - [x] `docs/protocol.md` yazilmis ve gercek kodla uyumlu
+
+### Faz 1'de kalan tek is
+
+**30 dakikalik dayaniklilik kosusu, duzeltilmis aracla.**
+
+Ilk kosu guvenilirlik kriterini gecmisti (25805 cerceve, sifir hata) ama
+olcum araci kumulatif olarak goruntuyu bozdugu icin FPS rakamlari
+anlamsizdi. Arac duzeltildi ve 5 dakikalik kosu temiz cikti (6602 kare,
+dusen 0, heap +0 bayt). Geriye tam sureli kosu kaldi.
+
+Nasil yapilir:
+
+1. Kabloyu **yerlesik USB portuna** tak (protokol orada, UART portunda
+   degil)
+2. `pio run -t upload` ile protokol firmware'ini yukle
+3. `python tools/link_test.py conformance` ile once uyum testleri
+4. `python tools/link_test.py endurance --minutes 30`
+
+Beklenen: dusen 0, CRC hatasi 0, senkron kaybi 0, ACK zaman asimi 0,
+heap farki yuzde 1'in altinda.
 
 ### Bilinen riskler
 

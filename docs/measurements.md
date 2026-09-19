@@ -505,3 +505,79 @@ GIF'te pay daha genis, bu da on olceklemenin ikinci gerekcesi.
 **Genel ders:** bir seyin ortalama hizinin dogru olmasi duzgun gorundugu
 anlamina gelmiyor. Zamanlama, isin bittigi yerde degil **sonucun gorundugu
 yerde** olculmeli.
+
+---
+
+## Faz 1.5b: Panel titremesi ve register ayari
+
+Tarih: 2026-09-19
+
+### Belirti
+
+Ekranda titreme goruldu. Kullanicinin gozlemleri:
+
+- **Sabit** pikseller titriyor, **hareketli** olanlar titremiyor
+- Koyu ve siyaha yakin tonlarda en kotu, acik tonlarda yok
+- Parlaklikla artiyor: 180 ustunde her zaman, 128'de bazi kliplerde
+- Cizgi seklinde degil, tum ekranda
+- "Ekran yenilenirken anlik parlaklik degisimi" gibi
+
+### Teshis
+
+Belirleyici gozlem: GIF acilirken bir kez siyahla doldurulup **bir daha hic
+dokunulmayan** kenar bantlari da titriyordu. O pikselleri veri yolumuz
+yeniden yazmiyor, yani sorun bizim tarafimizda olamaz.
+
+Bu **polarite tersleme titremesi**. TFT panellerde piksel gerilimi her
+karede polarite degistirir (sivi kristali DC'den korumak icin). VCOM
+referansi tam ortalanmamissa pozitif ve negatif kare biraz farkli parlaklik
+verir ve piksel iki seviye arasinda gidip gelir. Hareket bunu gizler, sabit
+ve koyu pikseller ise acikca gosterir, cunku gama egrisi orada en dik.
+
+Kaynagi: TFT_eSPI'nin ILI9341 init dizisindeki VCOM degerleri Adafruit'in
+jenerik varsayilanlari, bu panele gore ayarlanmis degil.
+
+### Yontem
+
+`src/paneltune_main.cpp` ve `env:paneltune`: ekranda hic yeniden yazilmayan
+sabit bir gri skala (7 bant, seviye 0-64), butonla canli register
+degistirme. Desen hic tuslanmadigi icin gorulen her titreme kesin olarak
+panelin.
+
+Sonra ayni ayarlar GIF oynaticiya tasindi ve gercek icerikte dogrulandi.
+**Bu adim gerekliydi:** sabit desende en iyi gorunen degerler (VCOM2 0x90,
+VCOM1 2B 2B) hareketli icerikte ayni sonucu vermedi.
+
+### Sonuc
+
+| Register | Secilen | TFT_eSPI stok |
+|---|---|---|
+| VCOM2 (C7) | **0xB8** | 0x86 |
+| VCOM1 (C5) | **30 30** | 3E 28 |
+| Kare hizi (B1) | **112 Hz** | 100 Hz |
+| Tersleme (B4) | 0x02 | 0x02 (degismedi) |
+| Guc1 (C0) | 0x23 | 0x23 (degismedi) |
+
+Parlaklik varsayilani 220. 255 titremeyi belirginlestiriyor, 200 sonuk
+bulundu; 180-220 araligi gercek icerikte iyi calisiyor.
+
+Degerler `src/panel_settings.cpp` icinde, `tft.init()` sonrasi uygulaniyor.
+Stok degerler listede duruyor ki karsilastirma yapilabilsin.
+
+### Kalan sinir
+
+`rgb_test2.gif` klibinde parlaklik 180 ve ustunde titreme her ayarla
+devam ediyor. Butun register kombinasyonlari denendi, degismedi. Diger
+kliplerde ayni parlaklikta sorun yok.
+
+Bu panelin sinirlarindan biri kabul edildi: TN panel, IPS degil. Kontrast
+dusuk ve polarite terslemesi belirli icerik ile parlaklik birlesimlerinde
+tamamen yok edilemiyor. PCB asamasinda IPS panele gecmek bu konuyu
+kokten cozer.
+
+### Not: parlaklik ve surme akimi
+
+Arka isik GPIO 21'den dogrudan suruluyor ve ESP32-S3 pin basina 20-40 mA
+verebiliyor. Panel bundan fazlasini isterse pin yetismez. Daha parlak
+gerekirse cozum MOSFET ile 3V3'ten surmek; **gerilim yukseltmek degil**,
+modulun akim sinirlama direnci 3.3V icin secilmis ve 5V LED'leri yakar.

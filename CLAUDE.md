@@ -3,8 +3,9 @@
 Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
 
 **Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
-Su anki asama: Faz 0 bitti (ekran dogrulama), Faz 1 siradaki (piksel hatti ve
-USB protokolu).
+Su anki asama: Faz 0 ve Faz 1'in buyuk kismi bitti. Kalan tek is 30
+dakikalik dayaniklilik kosusunun duzeltilmis aracla tekrari; ayrintisi
+`plans.md` sonunda.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek
@@ -37,11 +38,19 @@ MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
 | SCK | 12 |
 | LED | 21 |
 
+Butonlar (iki bacakli switch, oteki bacak GND, dahili pull-up):
+
+| Buton | GPIO | Islev |
+|---|---|---|
+| Ayar | 4 | kisa basis deger, uzun basis parametre |
+| GIF | 5 | sonraki GIF |
+
 Kullanilamaz pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullaniliyor. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevli.
 
-Bos ve kullanilabilir: GPIO 4, 5, 6, 7, 8, 13, 15, 16, 17, 18 ve saga taraftaki
-1, 2, 35-42, 47, 48. Rotary encoder ve butonlar buradan secilecek.
+Bos ve kullanilabilir: GPIO 6, 7, 8, 13, 15, 16, 17, 18 ve saga taraftaki
+1, 2, 35-42, 47, 48. Rotary encoder ve ek butonlar buradan secilecek.
+(4 ve 5 test butonlarinda.)
 
 ## Kritik: USE_FSPI_PORT silinmemeli
 
@@ -68,6 +77,34 @@ susturmaya calisma.
 SPI hizi tek yerden degistirilir: `platformio.ini` icindeki `[display]` bolumu.
 Breadboard uzerinde 40 MHz kararsiz olabilir, bozulma gorulurse 27 veya 20 MHz.
 
+## Panel register ayarlari
+
+TFT_eSPI'nin ILI9341 init dizisi Adafruit'in jenerik varsayilanlarini
+kullaniyor ve bu panelde **polarite tersleme titremesi** yapiyordu: sabit
+ve koyu pikseller, ozellikle yuksek parlaklikta, parliyor sonuyordu.
+
+`src/panel_settings.cpp` icindeki degerler gozle bulundu ve
+`tft.init()` **sonrasinda** uygulaniyor (once uygulanirsa kutuphane
+ustune yazar):
+
+| Register | Secilen | Stok |
+|---|---|---|
+| VCOM2 (C7) | 0xB8 | 0x86 |
+| VCOM1 (C5) | 30 30 | 3E 28 |
+| Kare hizi (B1) | 112 Hz | 100 Hz |
+
+Bu degerleri degistirmeden once `docs/measurements.md` icindeki Faz 1.5b
+bolumunu oku. Bulma yontemi de orada: `env:paneltune` sabit bir gri skala
+gosteriyor ve butonla canli ayar yapiliyor.
+
+**Kalan sinir:** `rgb_test2.gif` klibinde parlaklik 180 ustunde titreme
+her ayarla devam ediyor. Panelin sinirlarindan biri kabul edildi, TN
+panel IPS degil. Bu konuyu tekrar acma, butun kombinasyonlar denendi.
+
+Arka isik GPIO 21'den dogrudan suruluyor; pin 20-40 mA verebiliyor. Daha
+parlak gerekirse cozum MOSFET ile 3V3'ten surmek, gerilim yukseltmek
+degil: modulun akim sinirlama direnci 3.3V icin secilmis.
+
 ## Ekran yonu
 
 Yatay kullaniliyor, gorunur olcu 320x240. `DISPLAY_ROTATION` degeri 3.
@@ -85,12 +122,29 @@ gecir; uyusmazlik olursa firmware acilista seri porta uyari basar.
 icindeki `logPrintf()` ayni ciktiyi `Serial0` (UART0) uzerine de basar. Yeni log
 eklerken `Serial.printf` degil `logPrintf` kullan.
 
+## Ortamlar
+
+| Ortam | Ne yapar |
+|---|---|
+| `esp32-s3-devkitc-1` | Protokol alicisi, varsayilan |
+| `gifplay` | GIF oynatici, iki butonlu ayar arayuzu |
+| `paneltune` | Sabit gri skala, panel register ayari |
+| `bench` / `bench80` | Ekran hatti olcumu, 40 ve 80 MHz |
+| `usbdbg` | USB surucusu tanilamasi, cikti ekranda |
+
 ## Komutlar
 
 ```bash
-pio run
-pio run -t upload -t monitor
+pio run                                    # protokol firmware
+pio run -e gifplay -t upload               # GIF oynatici
+python tools/prepare_gif.py                # gif/ -> data/, ekran olcusune
+pio run -e gifplay -t uploadfs             # GIF'leri cihaza yaz
+python tools/link_test.py conformance      # protokol uyum testleri
 ```
+
+**Protokol testleri kablonun yerlesik USB portunda olmasini gerektirir.**
+GIF ve log tarafi UART kopru portundan calisir. Tek kablo varsa hangi
+testi yapacagina gore tasi.
 
 Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
 
@@ -131,7 +185,12 @@ Bunlar karara baglandi, yeniden acilmayacak. Gerekcesi `plans.md` icinde.
 6. **Kendi kodegimiz sadece RLE16.** Fotograf, GIF, video icin kutuphane
    kullanilacak (AnimatedGIF, TJpg_Decoder, MJPEG), kendi kodek yazilmaz.
 7. **SPI 40 MHz.** Olculdu, kararli, darbogaz degil.
-8. **Hava durumu icin anahtarsiz kaynak:** Open-Meteo.
+8. **GIF'ler cihaza yuklenmeden once ekran olcusune indirilir.**
+   `tools/prepare_gif.py` ffmpeg ile yapiyor, ileride PC uygulamasinin
+   gorevi olacak. Kazanc 14.8 yerine 19.0 FPS.
+9. **Tek bir kontrole ikiden fazla islev yuklenmez.** Buton icin tavan
+   kisa ve uzun basis. Daha fazlasi gerekiyorsa yeni buton eklenir.
+10. **Hava durumu icin anahtarsiz kaynak:** Open-Meteo.
 
 ## Kapsam disi (istenmedikce ekleme)
 

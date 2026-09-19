@@ -195,10 +195,42 @@ tanimlari projeden kaldirildi, GPIO 13 ile 18 tekrar serbest.
 T_* pinlerinin kesilmesine gerek yok, bagli olmadiklari surece hicbir etkileri
 yok. Kesmek geri donusu olmayan bir islem ve hicbir sey kazandirmaz.
 
+## Panel ayarlari
+
+TFT_eSPI'nin ILI9341 init dizisi bu panelde polarite tersleme titremesi
+yapiyor: sabit ve koyu pikseller, ozellikle yuksek parlaklikta, parliyor
+sonuyor. `src/panel_settings.cpp` icindeki degerler gozle bulundu ve
+`tft.init()` sonrasinda uygulaniyor.
+
+| Register | Secilen | Stok |
+|---|---|---|
+| VCOM2 (C7) | 0xB8 | 0x86 |
+| VCOM1 (C5) | 30 30 | 3E 28 |
+| Kare hizi (B1) | 112 Hz | 100 Hz |
+
+Yeniden ayarlamak icin `pio run -e paneltune -t upload`: ekranda sabit bir
+gri skala cikar, ayar butonuyla degerler canli degistirilir. Ayrintisi
+[docs/measurements.md](docs/measurements.md) icinde.
+
+## GIF oynatma
+
+Cihaz GIF'i kendi flashindan oynatir, PC yalnizca yukleme sirasinda
+devrededir.
+
+```bash
+python tools/prepare_gif.py        # gif/ altindakileri ekran olcusune indirir
+pio run -e gifplay -t uploadfs     # data/ altindakileri cihaza yazar
+pio run -e gifplay -t upload       # oynatici firmware
+```
+
+Iki buton: ayar butonu (GPIO 4) kisa basista deger, uzun basista parametre
+degistirir; GIF butonu (GPIO 5) sonraki dosyaya gecer.
+
 ## Sonraki asamalar
 
 Projenin yol haritasi, faz tanimlari ve her fazin cikis kriterleri
-[plans.md](plans.md) icinde.
+[plans.md](plans.md) icinde. Olculen butun degerler ve nasil olculdukleri
+[docs/measurements.md](docs/measurements.md) icinde.
 
 Cihaz ileride USB uzerinden bilgisayara baglanacak, bilgisayardaki uygulama
 ekran goruntusunu sikistirip gonderecek, cihaz sadece gelen bolgeleri ekrana

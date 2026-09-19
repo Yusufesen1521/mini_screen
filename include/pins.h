@@ -62,15 +62,9 @@
 #define BL_BRIGHTNESS_MAX       255
 #define BL_BRIGHTNESS_OFF       0
 
-// Tam parlaklik. Onceden 200 idi (yuzde 78), gorsel olarak sonuk
-// bulundugu icin acildi.
-//
-// Hala sonuksa sorun PWM degil surme akimi: panelin LED pini dogrudan
-// GPIO 21'den besleniyor ve ESP32-S3 pin basina 20-40 mA verebiliyor.
-// Arka isik bundan fazlasini isterse pin yetismez. O durumda cozum bir
-// MOSFET ile 3V3'ten surmek, gerilimi yukseltmek degil: modulun uzerindeki
-// akim sinirlama direnci 3.3V icin secilmis, 5V LED'leri yakar.
-#define BL_BRIGHTNESS_DEFAULT   BL_BRIGHTNESS_MAX
+// Gozle secilen varsayilan. 200 sonuk bulundu, 255 ise titremeyi
+// belirginlestiriyor; 180-220 araligi gercek icerikte iyi calisiyor.
+#define BL_BRIGHTNESS_DEFAULT   220
 
 // Acilis darbesi: ekran hic goruntu vermese bile firmware calistigini ve
 // arka isik hattinin saglam oldugunu gozle dogrulamak icin.
@@ -183,7 +177,7 @@
 // Uzun basista sirayla gezilen parlaklik seviyeleri
 #define BL_LEVELS           { 32, 64, 128, 180, 220, 255 }
 #define BL_LEVEL_COUNT      6
-#define BL_LEVEL_START      5      // BL_LEVELS icinde acilis seviyesi
+#define BL_LEVEL_START      4      // BL_LEVELS icinde acilis seviyesi (220)
 
 // Ayni anda taninan en fazla GIF sayisi
 #define GIF_MAX_FILES       8
