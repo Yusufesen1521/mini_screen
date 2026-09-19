@@ -75,10 +75,13 @@ static int16_t dirtyX0, dirtyY0, dirtyX1, dirtyY1;
 
 // Olcum
 static bool     drawEnabled = true;
+#if GIF_MEASURE_AT_BOOT
 static uint32_t frameCount = 0;
 static uint32_t frameUsTotal = 0;
 static uint32_t frameUsMin = 0xFFFFFFFF;
 static uint32_t frameUsMax = 0;
+#endif
+
 static uint32_t pushedPixels = 0;
 static uint32_t lastEnqueueUs = 0;
 
@@ -311,12 +314,14 @@ static void submitDirty()
   pendingValid = false;
 }
 
+#if GIF_MEASURE_AT_BOOT
 // Olcum yollari icin: hazirla ve hemen gonder.
 static void pushDirty()
 {
   prepareDirty();
   submitDirty();
 }
+#endif
 
 // Bekleyen butun basma islerinin bitmesini bekler. Olcum sonunda gerekli.
 static void pushDrain()
@@ -338,6 +343,7 @@ static void resetDirty()
   dirtyY1 = -1;
 }
 
+#if GIF_MEASURE_AT_BOOT
 // bSync true ise GIF kendi zamanlamasina uyar, false ise olabildigince
 // hizli oynar.
 static void playLoops(uint8_t loops, bool sync, const char *label)
@@ -386,8 +392,10 @@ static void playLoops(uint8_t loops, bool sync, const char *label)
             (unsigned long)frameUsMin, (unsigned long)frameUsMax,
             (unsigned long)(pushedPixels / frameCount));
 }
+#endif
 
-static bool openAndMeasure(const char *path)
+// Dosyayi acar ve olculerinin uygun oldugunu dogrular. Acik birakir.
+static bool openAndCheck(const char *path)
 {
   if (!gif.open(path, gifOpen, gifCloseCb, gifRead, gifSeek, gifDraw)) {
     logPrintf("%s: acilamadi, kod %d\n", path, gif.getLastError());
@@ -403,6 +411,15 @@ static bool openAndMeasure(const char *path)
     return false;
   }
 
+  return true;
+}
+
+#if GIF_MEASURE_AT_BOOT
+static void measureGif(const char *path)
+{
+  const int srcW = gif.getCanvasWidth();
+  const int srcH = gif.getCanvasHeight();
+
   buildMaps(srcW, srcH);
   tft.fillScreen(COLOR_BACKGROUND);
   memset(canvasBuf, 0, (size_t)dstW * dstH * 2);
@@ -413,9 +430,8 @@ static bool openAndMeasure(const char *path)
   playLoops(GIF_MEASURE_LOOPS, false, "sadece cozme");
   drawEnabled = true;
   playLoops(GIF_MEASURE_LOOPS, false, "cozme+ciz");
-
-  return true;
 }
+#endif
 
 // ---------------------------------------------------------------------------
 // Durum yazisi
@@ -657,7 +673,10 @@ void setup()
     snprintf(path, sizeof(path), "%s%s", (name[0] == '/') ? "" : "/", name);
     f.close();
 
-    if (openAndMeasure(path)) {
+    if (openAndCheck(path)) {
+#if GIF_MEASURE_AT_BOOT
+      measureGif(path);
+#endif
       strncpy(gifList[gifCount], path, sizeof(gifList[0]) - 1);
       gifCount++;
       gif.close();

@@ -154,7 +154,17 @@
 // Olcekleme haritalarinin boyu. Kaynak GIF bundan buyukse reddedilir.
 #define GIF_MAX_SRC_DIM     1024
 
-// Olcum kac tur oynatarak yapilsin
+// Acilista her GIF olculsun mu.
+//
+// Varsayilan kapali. Acikken bes klip ucer tur, iki gecis halinde
+// oynatiliyor ve bu yaklasik 90 saniye suruyor; o sure boyunca setup()
+// bitmedigi icin loop() calismiyor, yani butonlar olu ve ekranda
+// olcumden kalma bir kare duruyor. Cihaz bozuk sanildi.
+//
+// Olcum gerektiginde 1 yapilir.
+#define GIF_MEASURE_AT_BOOT 0
+
+// Olcum acikken kac tur oynatilsin
 #define GIF_MEASURE_LOOPS   3
 
 // Surekli oynatmada kac ms'de bir hiz raporu basilsin
