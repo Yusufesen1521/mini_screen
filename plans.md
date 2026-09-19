@@ -149,9 +149,16 @@ Bu olcumun protokole etkisi:
   ekran goruntusu
 - FPS, MB/s, CRC hata sayisi raporlar
 
-**1.5 Cihazda GIF oynatma**
-- `AnimatedGIF` kutuphanesi, LittleFS uzerinden
-- Protokolun stres testi ve ayni zamanda bagimsiz mod icin hazir oynatici
+**1.5 Cihazda GIF oynatma** (bitti)
+- `AnimatedGIF` kutuphanesi, LittleFS uzerinden. Olcumler
+  `docs/measurements.md` icinde.
+- Surekli oynatmada 15.0 FPS, yani kaynagin kendi hizi.
+- Uc iyilestirme gerekti: kare tamponu (kare basina 2680 setAddrWindow
+  cagrisi yerine tek cagri), on olcekleme, ve cozme ile basmanin ayri
+  cekirdeklere alinmasi.
+- Partisyon tablosu degistirildi: dosya sistemi 3.5 MB'dan 11.9 MB'a cikti.
+- Cikan kural: GIF'ler cihaza yuklenmeden once ekran olcusune indirilmeli.
+  PC uygulamasinin gorevi.
 
 **1.6 Protokolu belgele**
 - `docs/protocol.md`: her mesaj tipinin bayt duzeyinde tanimi, ornek
@@ -175,8 +182,8 @@ Bu olcumun protokole etkisi:
 - [x] Protokol surum alani calisiyor: eski cihaz yeni PC ile konusursa
       ikisi de temiz hata veriyor, tanimsiz davranis yok
 - [ ] 100 bin cerceve boyunca CRC hata sayisi 0
-- [ ] GIF flash'tan oynuyor, kare zamanlamasi GIF'in kendi suresine yuzde 10
-      dogrulukla uyuyor
+- [x] GIF flash'tan oynuyor, kare zamanlamasi GIF'in kendi suresine yuzde 10
+      dogrulukla uyuyor (olculen 14.95-15.18 FPS, kaynak 15.0)
 - [x] `docs/protocol.md` yazilmis ve gercek kodla uyumlu
 
 ### Bilinen riskler

@@ -1,0 +1,21 @@
+# mini_screen partisyon tablosu
+#
+# Varsayilan default_16MB.csv app0 ve app1 icin 6.4'er MB ayiriyor.
+# Uygulama 400 KB civarinda ve WiFi ile birlikte bile 1.5 MB'i gecmeyecek,
+# yani 12.8 MB bos duruyordu. Buna karsilik GIF ve duvar kagidi icin
+# yalnizca 3.5 MB kaliyordu ve tek bir GIF bunun ucte ikisini yiyordu.
+#
+# OTA icin iki app bolumu sart, ikisi de 2 MB'a indirildi. Kalan yer
+# dosya sistemine verildi: 11.9 MB.
+#
+# Bolumun adi spiffs kaliyor ama icerik LittleFS. Arduino'nun LittleFS
+# kutuphanesi varsayilan olarak bu etiketi ariyor; baska bir ad verilirse
+# LittleFS.begin() cagrisina etiketi elle gecmek gerekiyor.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x200000,
+app1,       app,  ota_1,    0x210000, 0x200000,
+spiffs,     data, spiffs,   0x410000, 0xBE0000,
+coredump,   data, coredump, 0xFF0000, 0x10000,

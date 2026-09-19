@@ -122,6 +122,20 @@
 #define CORNER_MARK_COUNT  4
 
 // ---------------------------------------------------------------------------
+// GIF oynatici
+// ---------------------------------------------------------------------------
+#define GIF_PATH            "/getsuga.gif"
+
+// Olcekleme haritalarinin boyu. Kaynak GIF bundan buyukse reddedilir.
+#define GIF_MAX_SRC_DIM     1024
+
+// Olcum kac tur oynatarak yapilsin
+#define GIF_MEASURE_LOOPS   3
+
+// Surekli oynatmada kac ms'de bir hiz raporu basilsin
+#define GIF_REPORT_MS       5000
+
+// ---------------------------------------------------------------------------
 // Renkler (RGB565)
 // ---------------------------------------------------------------------------
 #define COLOR_BACKGROUND    0x0000  // siyah

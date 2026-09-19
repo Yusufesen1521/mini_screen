@@ -396,3 +396,80 @@ karsilastirilmali.** Tutmuyorsa once araci suphelen.
 kriterini zaten gecti (25805 cerceve, sifir hata) ve ustelik yuk buyudugu
 icin daha zor kosullarda gecti; yine de duzgun sayilarla bir kez daha
 kosulmali.
+
+---
+
+## Faz 1.5: GIF oynatma
+
+Tarih: 2026-09-19
+Kaynak: `gif/getsuga.gif`, 480x270, 55 kare, 15 FPS, 2.59 MB
+Olcum araci: `src/gif_main.cpp`, `env:gifplay`. Cikti UART0 uzerine.
+
+Butun kareler tam boy ve hepsinde saydamlik bayragi var: kodlayici
+degismeyen pikselleri saydam isaretlemis. Saydam pikseller yazilmiyor,
+onceki kare kaliyor.
+
+### Sonuclar
+
+Her satir 3 tur (165 kare) ortalamasi. "cozme" cizim tamamen kapaliyken.
+
+| GIF | Sadece cozme | Cozme + cizme |
+|---|---|---|
+| 480x270 (orijinal) | 17.3 FPS | **14.8 FPS** |
+| 320x180 (on olceklenmis) | 23.1 FPS | **19.0 FPS** |
+
+Surekli oynatmada olculen: **14.95 - 15.18 FPS**, yani kaynagin kendi
+hizi. GIF dogru hizda oynuyor.
+
+### Yol boyunca yapilan uc iyilestirme
+
+**1. Kare tamponu.** Ilk surum saydam olmayan her diziyi ayri ayri
+basiyordu: kare basina **2680 setAddrWindow cagrisi**. Olculen 37.8 ms
+cizim suresinin yaklasik 20 ms'i saf cagri yukuydu (dizi basina 7.4 us).
+Kareyi tampona cizip tek seferde basmak bunu 26.7 ms'ye indirdi.
+
+**2. On olcekleme.** Kaynak 480x270, ekranda gosterilen 320x180. Yani
+129600 piksel cozulup 57600'u gosteriliyordu. PC tarafinda ffmpeg ile
+320x180'e indirilince cozme 57.9 ms'den 43.4 ms'ye dustu.
+
+Beklenenden az bir kazanc: piksel sayisi 2.25 kat azaldi ama sure sadece
+1.33 kat. Cunku LZW cozme isi piksel sayisiyla degil **sikistirilmis veri
+boyutuyla** orantili, o da 2.59 MB'dan 2.17 MB'a inmisti.
+
+**3. Cozme ve basma ayri cekirdeklere.** Protokol tarafindaki ayni desen.
+Ardisikken cozme 43 + basma 27 = 70 ms idi, yani kaynagin istedigi 67
+ms'nin ustunde ve GIF yavas oynuyordu. Ayrilinca basma tamamen gizlendi,
+geriye sadece degisen dikdortgeni kopyalamanin maliyeti (yaklasik 9 ms)
+kaldi.
+
+### Kutuphanenin bSync secenegi kullanilmiyor
+
+`AnimatedGIF::playFrame(true, ...)` yalnizca **kendi icinde** gecen sureyi
+olcup kare gecikmesinden dusuyor (AnimatedGIF.cpp:335). Basma isi
+playFrame disinda yapildigi icin bu sure hesaba girmiyordu: 43.4 ms cozme
+gorup 23.6 ms uyuyor, sonra 26.7 ms basiliyordu, toplam 93.7 ms. Olculen
+93.2 ms ile birebir uyusuyor.
+
+Zamanlama artik `loop()` icinde kendimiz yapiyoruz: hedef zamani biriktirip
+gerekirse bekliyoruz, geride kalinca birikimi sifirliyoruz.
+
+### Partisyon tablosu degistirildi
+
+`default_16MB.csv` app0 ve app1 icin 6.4'er MB ayiriyor, dosya sistemine
+3.5 MB birakiyordu. Uygulama 400 KB civarinda, yani 12.8 MB bos duruyordu
+ve tek bir GIF dosya sisteminin ucte ikisini yiyordu.
+
+`partitions.csv` ile app bolumleri 2'ser MB'a indirildi, dosya sistemi
+**11.9 MB** oldu. OTA icin iki app bolumu korundu.
+
+Bolumun adi `spiffs` kaldi ama icerik LittleFS: Arduino'nun LittleFS
+kutuphanesi varsayilan olarak bu etiketi ariyor.
+
+### Sonraki asamalar icin cikan kural
+
+**GIF'ler cihaza yuklenmeden once ekran olcusune indirilmeli.** Kazanc
+14.8 FPS yerine 19.0 FPS, yani yuzde 28 pay. Bu is PC uygulamasinin
+gorevi ve zaten mimari karar 1 ile uyumlu: agir isi PC yapar.
+
+Orijinal olcu de calisiyor (14.8 FPS, kaynagin yuzde 99'u), yani on
+olcekleme sart degil ama pay birakiyor.
