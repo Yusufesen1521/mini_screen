@@ -17,7 +17,7 @@ use crate::widget::{Context, Widget};
 /// Saat ile saniye arasindaki bosluk.
 const SEC_GAP: u16 = 4;
 /// Saniye, saat ve dakikadan kucuk. Boylece goz once saate gidiyor.
-const SIZE_SECONDS: f32 = 17.0;
+const SIZE_SECONDS: f32 = 13.0;
 /// Baslik altindaki vurgu cizgisi.
 const RULE_H: u16 = 2;
 
@@ -96,7 +96,7 @@ impl Widget for Clock {
 
         // Saat ve dakika buyuk, saniye kucuk ve soluk.
         let hhmm = format!("{:02}:{:02}", h, m);
-        let baseline = area.y + 12;
+        let baseline = area.y + 6;
         let end = canvas.text(
             &hhmm,
             area.x + theme::SCREEN_PAD,
@@ -121,7 +121,7 @@ impl Widget for Clock {
         canvas.text_right(
             gun,
             right,
-            area.y + 16,
+            area.y + 6,
             theme::SIZE_WEEKDAY,
             FontKind::Sans,
             theme::TEXT_FAINT,
@@ -129,7 +129,7 @@ impl Widget for Clock {
         canvas.text_right(
             &format!("{} {} {}", d, ay, y),
             right,
-            area.y + 32,
+            area.y + 20,
             theme::SIZE_DATE,
             FontKind::Sans,
             theme::TEXT_DIM,

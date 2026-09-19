@@ -846,3 +846,75 @@ bloklamayan hale getirildi, tur hizi geri geldi.
 
 **Ders:** dirty tracking gonderimi seyrektiyorsa okuma da seyreklesmemeli.
 Iki yon ayri dusunulmeli.
+
+---
+
+## Faz 2: gosterge paneli ve Afterburner kaynagi
+
+Tarih: 2026-09-19
+
+### Afterburner paylasimli bellegi
+
+Plan GPU icin satici basina SDK diyordu (NVIDIA'da NVML, AMD'de ADLX).
+MSI Afterburner'in paylasimli bellegi satici bagimsiz ve ayni yapidan
+hem NVIDIA hem AMD okunuyor. Ustelik `sysinfo`'nun Windows'ta
+veremedigi CPU sicakligini da veriyor.
+
+Bu makinede okunanlar:
+
+| Olcum | Once | Simdi |
+|---|---|---|
+| CPU sicakligi | yok | 66 C |
+| GPU yuku | yok | okunuyor |
+| GPU sicakligi | yok | 54 C |
+| VRAM | yok | 1.4 / 8.0 GiB |
+
+Paylasimli bellekte 85 girdi var. Kullanilanlar: `GPU temperature`,
+`GPU usage`, `Memory usage` (VRAM, megabayt; toplam icin `maxLimit`),
+`CPU temperature`.
+
+**Iki tuzak, ikisi de koda not dusuldu:**
+
+1. Imza sabiti. SDK 'MAHM' degerini MSVC coklu karakter sabiti olarak
+   tanimliyor, yani `0x4D41484D`. Bayt sirasi cevrilirse `0x4D48414D`
+   cikiyor ve imza hic tutmuyor. Ilk denemede oyle yanildik; ham baslik
+   dokumu alinca `"MHAM"` gorundu ve hata anlasildi.
+2. Ad eslestirmesi. Icerme ile arayinca `GPU temperature 2` girdisi
+   `GPU temperature` girdisinin ustune yaziyordu; bu makinede ikinci bir
+   GPU sicaklik sensoru var. Tam esitlige cevrildi. Ayni tuzak
+   `CPU temperature` icin de gecerli, cunku `CPU1 temperature` gibi
+   cekirdek basina kardesleri var.
+
+**Not:** Win32 hata kodunu okumak teshisi hizlandirdi. Esleme aciliyor
+ama girdi gelmiyorsa sorun yetki degil ayristirmadir; ham basligi
+basmak bunu hemen gosterdi.
+
+### Halka gostergeler: kenar yumusatma maliyeti
+
+Onceki olcum kenar yumusatmali vektor yolunun rasterlemenin yuzde
+97'sini yedigini gostermisti. Halka gosterge tam olarak o: yay cizimi.
+Yine de karsilaniyor, cunku **24 FPS varsayimi bu widget icin gecerli
+degil.** Gosterge paneli saniyede iki kez yeniden ciziliyor.
+
+Uc halka, her biri iki yay (oyuk ve dolu), yaklasik uc pikselde bir
+dugum:
+
+| Tasarim | CPU (bir cekirdegin) | Bellek |
+|---|---|---|
+| Satirli panel (yay yok) | %0.62 | 25.8 MB |
+| Halkali panel (6 yay) | **%0.49** | 45.4 MB |
+
+Halkali tasarim daha az CPU harcıyor, cunku degerleri daha seyrek
+degisiyor ve yeniden cizim daha nadir tetikleniyor. Kriter yuzde 3
+istiyordu, ikisi de rahat geciyor.
+
+**Bellek 25.8'den 45.4 MB'a cikti.** Sebep ikinci font (oranti fontu)
+ve glif onbellegi. Kabul edildi ama 24 saatlik kriterde izlenecek;
+artis surekli degil, onbellek doyunca duruyor.
+
+### Cikan kural
+
+Rasterleme maliyetini widget'in yeniden cizim sikligiyla birlikte
+dusun. "Kenar yumusatma pahali" tek basina bir yasak degil; saniyede
+iki kez cizilen bir seyde bedava sayilir, her karede cizilen bir seyde
+butceyi yer.

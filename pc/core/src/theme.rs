@@ -27,6 +27,7 @@ pub const TEXT_FAINT: Color = Color::rgb(86, 95, 110);
 pub const ACCENT: Color = Color::rgb(79, 163, 227);
 pub const CPU: Color = Color::rgb(79, 163, 227);
 pub const RAM: Color = Color::rgb(169, 139, 232);
+pub const GPU: Color = Color::rgb(80, 210, 180);
 pub const DISK: Color = Color::rgb(70, 192, 160);
 pub const NET: Color = Color::rgb(232, 180, 79);
 /// Esik ustunde cubuk bu renge doner.
@@ -39,12 +40,12 @@ pub const TRACK: Color = Color::rgb(34, 40, 50);
 // Olculer, 320x240 icin
 pub const SCREEN_PAD: u16 = 12;
 /// Baslik seridi yuksekligi. Saat buranin icinde.
-pub const HEADER_H: u16 = 68;
+pub const HEADER_H: u16 = 42;
 /// Bir olcum satirinin yuksekligi.
 pub const ROW_H: u16 = 43;
 
 // Yazi boyutlari
-pub const SIZE_CLOCK: f32 = 42.0;
+pub const SIZE_CLOCK: f32 = 30.0;
 pub const SIZE_DATE: f32 = 13.0;
 pub const SIZE_WEEKDAY: f32 = 11.0;
 pub const SIZE_LABEL: f32 = 11.0;

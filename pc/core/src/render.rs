@@ -10,7 +10,14 @@
 //! yumusatmali vektor yolu. `anti_alias` bu yuzden varsayilan olarak
 //! kapali ve acmak bilincli bir karar olmali.
 
-use tiny_skia::{Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke, Transform};
+use tiny_skia::{LineCap, Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke, Transform};
+
+/// Yay cizerken dugumler arasi hedef mesafe, piksel.
+const ARC_SEGMENT_PX: f32 = 3.0;
+/// Bir yay icin ust sinir. Bozuk girdide sonsuz dongu olmasin.
+const MAX_ARC_STEPS: usize = 512;
+/// Bundan kucuk suprum cizilmiyor.
+const MIN_ARC_SWEEP: f32 = 0.5;
 
 /// Ekran ustunde bir dikdortgen. Olculer piksel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +193,66 @@ impl Canvas {
         };
         self.pm
             .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+
+    /// Yay cizer. Aci derece, 0 saga bakiyor, artan aci saat yonunde
+    /// (ekran koordinatlarinda y asagi buyudugu icin dogal olarak).
+    ///
+    /// **Bu tek yerde kenar yumusatma acik.** Olcum kenar yumusatmali
+    /// vektor yolunun rasterlemenin en pahali isi oldugunu gostermisti
+    /// (`docs/measurements.md`). Ama gosterge paneli saniyede iki kez
+    /// yeniden ciziliyor, 24 FPS degil; tirtikli halka gostermektense
+    /// bu maliyet odeniyor. Karari degistirmeden once olcume bak.
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start_deg: f32,
+        sweep_deg: f32,
+        width: f32,
+        c: Color,
+    ) {
+        if radius <= 0.0 || sweep_deg.abs() < MIN_ARC_SWEEP {
+            return;
+        }
+        // Yay uzunluguna gore parca sayisi: yaklasik uc pikselde bir
+        // dugum. Daha sik olmasi gozle farkedilmiyor, maliyeti artiriyor.
+        let arc_len = radius * sweep_deg.abs().to_radians();
+        let steps = ((arc_len / ARC_SEGMENT_PX).ceil() as usize).clamp(2, MAX_ARC_STEPS);
+
+        let mut pb = PathBuilder::new();
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let a = (start_deg + sweep_deg * t).to_radians();
+            let (x, y) = (cx + radius * a.cos(), cy + radius * a.sin());
+            if i == 0 {
+                pb.move_to(x, y);
+            } else {
+                pb.line_to(x, y);
+            }
+        }
+        let Some(path) = pb.finish() else { return };
+
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(c.to_sk());
+        let stroke = Stroke {
+            width,
+            line_cap: LineCap::Round,
+            ..Default::default()
+        };
+        self.pm
+            .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+
+    /// Ortalanmis metin. Gosterge icindeki sayilar icin.
+    pub fn text_center(&mut self, s: &str, cx: u16, y: u16, size: f32, kind: FontKind, c: Color) {
+        let w = self.text_width(s, size, kind);
+        self.text(s, cx.saturating_sub(w / 2), y, size, kind, c);
     }
 
     /// Metin cizer ve bittigi x konumunu doner.

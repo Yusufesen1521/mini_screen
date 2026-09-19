@@ -253,7 +253,7 @@ pub fn default_layout(width: u16, height: u16) -> Vec<Slot> {
     let header = crate::theme::HEADER_H.min(height);
     vec![
         Slot::new("clock", Rect::new(0, 0, width, header)),
-        Slot::new("sysinfo", Rect::new(0, header, width, height - header)),
+        Slot::new("gauges", Rect::new(0, header, width, height - header)),
     ]
 }
 
