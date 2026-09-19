@@ -6,3 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 serialport.workspace = true
+tiny-skia.workspace = true
+fontdue.workspace = true
+inventory.workspace = true
+chrono.workspace = true
