@@ -43,9 +43,15 @@
 // Test butonu. Iki bacakli mekanik switch: bir bacak bu pine, oteki GND'ye.
 // Dahili pull-up kullaniliyor, basilinca LOW okunuyor, harici direnc yok.
 //
-// GPIO 4 secildi: bos, strapping gorevi yok, dahili pull-up destekliyor.
-// GPIO 26'ya BAGLAMA, orasi oktal PSRAM tarafindan kullaniliyor.
-#define PIN_BUTTON    4
+// GPIO 4 ve 5 secildi: bos, strapping gorevi yok, dahili pull-up
+// destekliyorlar. GPIO 26'ya BAGLAMA, orasi oktal PSRAM tarafindan
+// kullaniliyor.
+//
+// Iki ayri buton var cunku tek butona ucuncu bir islev yuklemek kullanisli
+// degil. Ayar butonu: kisa basis deger, uzun basis parametre. GIF butonu:
+// sonraki GIF.
+#define PIN_BUTTON_TUNE   4
+#define PIN_BUTTON_GIF    5
 
 // ---------------------------------------------------------------------------
 // Arka isik PWM (LEDC)
@@ -158,7 +164,7 @@
 // Test butonu
 // ---------------------------------------------------------------------------
 #define BUTTON_DEBOUNCE_MS  30
-#define BUTTON_LONG_MS      600    // bu sureden uzun basis parlaklik degistirir
+#define BUTTON_LONG_MS      600    // bu sureden uzun basis parametre degistirir
 
 // Buton basilinca alt seritte gosterilen durum yazisi
 #define STATUS_HEIGHT       18

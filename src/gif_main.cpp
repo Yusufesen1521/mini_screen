@@ -18,6 +18,7 @@
 
 #include "backlight.h"
 #include "log.h"
+#include "panel_settings.h"
 #include "pins.h"
 
 static TFT_eSPI tft;
@@ -92,6 +93,14 @@ static uint8_t blIndex = BL_LEVEL_START;
 
 // Alt seritteki durum yazisi ne zamana kadar dursun
 static uint32_t statusUntilMs = 0;
+
+// Butonun gezdigi menu: once panel registerlari, sonra parlaklik, sonra
+// hangi GIF'in oynadigi. Hepsi ayni mekanizmayla: uzun basis parametreyi
+// secer, kisa basis degerini degistirir.
+#define MENU_BRIGHTNESS  (panelParamCount)
+#define MENU_COUNT       (panelParamCount + 1)
+
+static uint8_t menuIndex = 0;
 
 // Zamanlama, GIF degisince sifirlaniyor
 static uint32_t nextFrameUs = 0;
@@ -423,18 +432,29 @@ static void showStatus()
 
   const int16_t y0 = SCREEN_HEIGHT - STATUS_HEIGHT;
   char text[64];
-  const char *name = gifList[gifIndex];
-  snprintf(text, sizeof(text), "%s   parlaklik %u",
-           (name[0] == '/') ? &name[1] : name,
-           (unsigned)blLevels[blIndex]);
+
+  if (menuIndex == MENU_BRIGHTNESS) {
+    snprintf(text, sizeof(text), "Parlaklik  %u", (unsigned)blLevels[blIndex]);
+  } else {
+    const PanelParam &p = panelParams[menuIndex];
+    snprintf(text, sizeof(text), "%s  %s", p.name, p.values[p.index].label);
+  }
 
   tft.fillRect(0, y0, SCREEN_WIDTH, STATUS_HEIGHT, COLOR_BACKGROUND);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
   tft.drawString(text, 4, y0 + 1, FONT_LABEL);
 
+  // Hangi GIF'te oldugumuz hep sagda dursun
+  const char *gifName = gifList[gifIndex];
+  if (gifName[0] == '/') {
+    gifName++;
+  }
+  tft.setTextDatum(TR_DATUM);
+  tft.drawString(gifName, SCREEN_WIDTH - 4, y0 + 1, FONT_LABEL);
+
   statusUntilMs = millis() + STATUS_SHOW_MS;
-  logPrintf("%s\n", text);
+  logPrintf("%-26s [%s]\n", text, gifName);
 }
 
 static void clearStatus()
@@ -484,13 +504,16 @@ static bool openGifAt(uint8_t index)
 }
 
 // ---------------------------------------------------------------------------
-// Buton
+// Butonlar
 //
-// Kisa basis: sonraki GIF. Uzun basis: sonraki parlaklik seviyesi.
-// Ikisi de goruntuyu kesmeden calisiyor, oynatma devam ediyor.
+// Ayar butonu: kisa basis suanki parametrenin sonraki degeri, uzun basis
+// sonraki parametre. GIF butonu: sonraki dosya.
+//
+// Ucuncu bir islev tek butona yuklenmedi; bas kalibi ezberlemek gereken
+// bir kontrol kotu kontroldur.
 // ---------------------------------------------------------------------------
 
-static void pollButton()
+static void pollTuneButton()
 {
   static bool     lastRaw = true;     // pull-up, bosta HIGH
   static uint32_t changeMs = 0;
@@ -498,7 +521,7 @@ static void pollButton()
   static uint32_t pressMs = 0;
   static bool     longFired = false;
 
-  const bool raw = (digitalRead(PIN_BUTTON) != LOW);
+  const bool raw = (digitalRead(PIN_BUTTON_TUNE) != LOW);
   const uint32_t now = millis();
 
   if (raw != lastRaw) {
@@ -519,15 +542,55 @@ static void pollButton()
   } else if (down && pressed && !longFired &&
              (now - pressMs) >= BUTTON_LONG_MS) {
     longFired = true;
-    blIndex = (uint8_t)((blIndex + 1) % BL_LEVEL_COUNT);
-    backlightSet(blLevels[blIndex]);
+    menuIndex = (uint8_t)((menuIndex + 1) % MENU_COUNT);
     showStatus();
   } else if (!down && pressed) {
     pressed = false;
-    if (!longFired && gifCount > 1) {
+    if (longFired) {
+      return;
+    }
+
+    if (menuIndex == MENU_BRIGHTNESS) {
+      blIndex = (uint8_t)((blIndex + 1) % BL_LEVEL_COUNT);
+      backlightSet(blLevels[blIndex]);
+    } else {
+      PanelParam &p = panelParams[menuIndex];
+      p.index = (uint8_t)((p.index + 1) % p.count);
+      pushDrain();            // basma gorevi araya girmesin
+      panelApply(tft, p);
+    }
+    showStatus();
+  }
+}
+
+// GIF butonu: her basista sonraki dosya.
+static void pollGifButton()
+{
+  static bool     lastRaw = true;
+  static uint32_t changeMs = 0;
+  static bool     pressed = false;
+
+  const bool raw = (digitalRead(PIN_BUTTON_GIF) != LOW);
+  const uint32_t now = millis();
+
+  if (raw != lastRaw) {
+    lastRaw = raw;
+    changeMs = now;
+    return;
+  }
+  if ((now - changeMs) < BUTTON_DEBOUNCE_MS) {
+    return;
+  }
+
+  const bool down = !raw;
+  if (down && !pressed) {
+    pressed = true;
+    if (gifCount > 1) {
       openGifAt((uint8_t)((gifIndex + 1) % gifCount));
       showStatus();
     }
+  } else if (!down && pressed) {
+    pressed = false;
   }
 }
 
@@ -536,13 +599,15 @@ void setup()
   logBegin();
   logPrintf("\n=== mini_screen GIF oynatici ===\n");
 
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_TUNE, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_GIF, INPUT_PULLUP);
 
   backlightBegin();
   backlightSet(BL_BRIGHTNESS_OFF);
 
   tft.init();
   tft.setRotation(DISPLAY_ROTATION);
+  panelApplyAll(tft);   // gozle bulunan degerler, init dizisinin ustune
   tft.fillScreen(COLOR_BACKGROUND);
   tft.setSwapBytes(true);   // palet little-endian RGB565, panel big-endian
   backlightSet(blLevels[blIndex]);
@@ -613,8 +678,11 @@ void setup()
     }
   }
 
-  logPrintf("\n%u GIF bulundu. Butona kisa bas: sonraki GIF, "
-            "uzun bas: parlaklik.\n", (unsigned)gifCount);
+  logPrintf("\n%u GIF, %u ayar maddesi.\n",
+            (unsigned)gifCount, (unsigned)MENU_COUNT);
+  logPrintf("Ayar butonu GPIO %d: kisa basis deger, uzun basis parametre.\n",
+            (int)PIN_BUTTON_TUNE);
+  logPrintf("GIF butonu  GPIO %d: sonraki GIF.\n", (int)PIN_BUTTON_GIF);
   openGifAt(startIndex);
   showStatus();
 }
@@ -626,7 +694,8 @@ void loop()
     return;
   }
 
-  pollButton();
+  pollTuneButton();
+  pollGifButton();
 
   if (statusUntilMs != 0 && (int32_t)(millis() - statusUntilMs) >= 0) {
     clearStatus();
