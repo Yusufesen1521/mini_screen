@@ -1,0 +1,73 @@
+name: PC uygulamasi
+
+# Faz 2 cikis kriteri: "Uygulama Windows ve Linux'ta derleniyor ve
+# calisiyor; macOS'ta en azindan derleniyor."
+#
+# Testler Windows ve Linux'ta kosuluyor. macOS'ta sadece derleme, cunku
+# kriter macOS icin calismayi degil derlenmeyi istiyor.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pc/**"
+      - ".github/workflows/pc.yml"
+  pull_request:
+    paths:
+      - "pc/**"
+      - ".github/workflows/pc.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: pc
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            test: true
+          - os: windows-latest
+            test: true
+          - os: macos-latest
+            test: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust kurulumu
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Onbellek
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pc
+
+      # serialport crate'i Linux'ta libudev istiyor.
+      - name: Linux bagimliliklari
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+        working-directory: .
+
+      - name: Bicim kontrolu
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Derleme
+        run: cargo build --release
+
+      - name: Testler
+        if: matrix.test
+        run: cargo test --release
