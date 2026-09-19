@@ -473,3 +473,35 @@ gorevi ve zaten mimari karar 1 ile uyumlu: agir isi PC yapar.
 
 Orijinal olcu de calisiyor (14.8 FPS, kaynagin yuzde 99'u), yani on
 olcekleme sart degil ama pay birakiyor.
+
+### Titreme: zamanlama hatasiydi
+
+Oynatma hiz olarak dogruydu (15.0 FPS, kaynak da 15.0) ama ekranda titreme
+goruldu. "Yetisiyor" ile "duzgun araliklarla gosteriyor" ayni sey degil.
+
+Ekranin gercekten guncellendigi an, yani basma isinin kuyruga verildigi an
+olculdu:
+
+| | Once | Sonra |
+|---|---|---|
+| En kisa aralik | 48812 us | 59999 us |
+| En uzun aralik | 92157 us | 70001 us |
+| Oynama | **43345 us** | **2 us** |
+
+Sebep: bekleme **gonderimden sonra** yapiliyordu. Cozme suresi kare basina
+31-55 ms arasinda degisiyor; bekleme sonda oldugu icin dongu basi duzenli
+kaliyordu ama ekranin guncellendigi an cozme suresi kadar kayiyordu.
+Ortalama dogru, tek tek kareler neredeyse iki kat farkli araliklarla.
+
+Duzeltme: cozme bitince kare tampona hazirlaniyor, **planlanan ana kadar
+bekleniyor**, sonra gonderiliyor. Boylece cozmenin ne kadar surdugu
+onemsiz hale geliyor. Kalan 10 ms fark GIF'in kendi karisik gecikmesi
+(60 ve 70 ms), hata payi mikrosaniye seviyesinde.
+
+Bu isin calismasi cozmenin hedef suresini asmamasina bagli: cozme 31-55 ms
+arti kopyalama 9 ms, hedef 60-70 ms. Pay dar ama yetiyor. On olceklenmis
+GIF'te pay daha genis, bu da on olceklemenin ikinci gerekcesi.
+
+**Genel ders:** bir seyin ortalama hizinin dogru olmasi duzgun gorundugu
+anlamina gelmiyor. Zamanlama, isin bittigi yerde degil **sonucun gorundugu
+yerde** olculmeli.

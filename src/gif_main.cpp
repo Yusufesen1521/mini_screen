@@ -79,6 +79,7 @@ static uint32_t frameUsTotal = 0;
 static uint32_t frameUsMin = 0xFFFFFFFF;
 static uint32_t frameUsMax = 0;
 static uint32_t pushedPixels = 0;
+static uint32_t lastEnqueueUs = 0;
 
 // ---------------------------------------------------------------------------
 // Dosya geri cagirmalari
@@ -227,9 +228,16 @@ static void gifPushTask(void *arg)
   }
 }
 
-// Degisen dikdortgeni bos bir tampona kopyalar ve basma gorevine verir.
-static void pushDirty()
+// Hazirlanmis ama henuz gonderilmemis is. Gonderim ani ekranin
+// guncellendigi an demek, o yuzden zamanlama buna gore yapiliyor.
+static GifPushJob pendingJob;
+static bool       pendingValid = false;
+
+// Degisen dikdortgeni bos bir tampona kopyalar. Gondermez.
+static void prepareDirty()
 {
+  pendingValid = false;
+
   if (dirtyY1 < dirtyY0 || dirtyX1 < dirtyX0) {
     return;   // bu karede degisen yok
   }
@@ -254,11 +262,29 @@ static void pushDirty()
            (size_t)w * 2);
   }
 
-  GifPushJob job = {
+  pendingJob = GifPushJob{
     dst, bufIndex,
     (int16_t)(dstX0 + dirtyX0), (int16_t)(dstY0 + dirtyY0), w, h,
   };
-  xQueueSend(gifPushQueue, &job, portMAX_DELAY);
+  pendingValid = true;
+}
+
+// Hazir isi basma gorevine verir. Ekran bu anda guncelleniyor.
+static void submitDirty()
+{
+  if (!pendingValid) {
+    return;
+  }
+  lastEnqueueUs = micros();
+  xQueueSend(gifPushQueue, &pendingJob, portMAX_DELAY);
+  pendingValid = false;
+}
+
+// Olcum yollari icin: hazirla ve hemen gonder.
+static void pushDirty()
+{
+  prepareDirty();
+  submitDirty();
 }
 
 // Bekleyen butun basma islerinin bitmesini bekler. Olcum sonunda gerekli.
@@ -448,39 +474,76 @@ void loop()
   int delayMs = 0;
   resetDirty();
   const int result = gif.playFrame(false, &delayMs);
-  pushDirty();
+  prepareDirty();
 
-  // Zamanlamayi kendimiz yapiyoruz. Kutuphanenin bSync secenegi yalnizca
-  // playFrame icindeki sureyi olcuyor, basma suresini gormuyor; o yuzden
-  // her karede fazladan bekliyordu.
+  // Zamanlama gonderimden ONCE yapiliyor.
+  //
+  // Onceki surumde bekleme gonderimden sonraydi, yani cozme suresi ne
+  // kadar degisirse ekranin guncellendigi an da o kadar kayiyordu.
+  // Olculen aralik 48.8 ile 92.2 ms arasinda oynuyordu; ortalama dogruydu
+  // ama goz bunu titreme olarak goruyor. Simdi ekran hep planlanan anda
+  // guncelleniyor, cozmenin ne kadar surdugu onemli degil.
+  //
+  // Kutuphanenin bSync secenegi de kullanilamaz: o yalnizca playFrame
+  // icindeki sureyi olcuyor, basma disarida kaliyor.
   if (nextFrameUs == 0) {
     nextFrameUs = micros();
   }
-  nextFrameUs += (uint32_t)delayMs * 1000u;
-  const int32_t wait = (int32_t)(nextFrameUs - micros());
+  int32_t wait = (int32_t)(nextFrameUs - micros());
+  while (wait > GIF_YIELD_US) {
+    vTaskDelay(1);                 // mesgul beklemek yerine sirayi birak
+    wait = (int32_t)(nextFrameUs - micros());
+  }
   if (wait > 0) {
     delayMicroseconds((uint32_t)wait);
-  } else {
-    nextFrameUs = micros();   // geride kaldik, birikmesin
+  }
+
+  submitDirty();
+
+  nextFrameUs += (uint32_t)delayMs * 1000u;
+  if ((int32_t)(micros() - nextFrameUs) > GIF_RESYNC_US) {
+    nextFrameUs = micros();        // cok geride kaldik, birikim sifirlansin
   }
 
   if (result <= 0) {
     gif.reset();
   }
 
-  // Surekli oynatmada gercekten kaynagin hizinda gidiyor muyuz
+  // Oynatim hizi ve duzensizligi. Titreme sikayeti hiz sorunundan degil
+  // ekranin duzensiz araliklarla guncellenmesinden olabilir, o yuzden
+  // araligin kendisi de olculuyor.
   static uint32_t loopFrames = 0;
   static uint32_t loopStartMs = 0;
+  static uint32_t lastShowUs = 0;
+  static uint32_t gapMin = 0xFFFFFFFF;
+  static uint32_t gapMax = 0;
+  static uint64_t gapSum = 0;
+
+  const uint32_t nowUs = lastEnqueueUs;   // ekranin guncellendigi an
+  if (lastShowUs != 0 && nowUs != lastShowUs) {
+    const uint32_t gap = nowUs - lastShowUs;
+    if (gap < gapMin) gapMin = gap;
+    if (gap > gapMax) gapMax = gap;
+    gapSum += gap;
+  }
+  lastShowUs = nowUs;
+
   if (loopStartMs == 0) {
     loopStartMs = millis();
   }
   loopFrames++;
   const uint32_t elapsed = millis() - loopStartMs;
-  if (elapsed >= GIF_REPORT_MS) {
-    logPrintf("oynatim  %5.2f FPS  (hedef %.2f)\n",
+  if (elapsed >= GIF_REPORT_MS && loopFrames > 1) {
+    logPrintf("oynatim %5.2f FPS  aralik ort %lu us (min %lu max %lu, "
+              "oynama %lu us)\n",
               1000.0 * loopFrames / (double)elapsed,
-              (delayMs > 0) ? (1000.0 / delayMs) : 0.0);
+              (unsigned long)(gapSum / (loopFrames - 1)),
+              (unsigned long)gapMin, (unsigned long)gapMax,
+              (unsigned long)(gapMax - gapMin));
     loopFrames = 0;
     loopStartMs = millis();
+    gapMin = 0xFFFFFFFF;
+    gapMax = 0;
+    gapSum = 0;
   }
 }

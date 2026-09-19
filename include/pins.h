@@ -135,6 +135,12 @@
 // Surekli oynatmada kac ms'de bir hiz raporu basilsin
 #define GIF_REPORT_MS       5000
 
+// Beklerken bu suredan uzunsa sirayi birak, kisaysa mesgul bekle
+#define GIF_YIELD_US        2000
+
+// Hedefin bu kadar gerisine dusersek birikimi sifirla
+#define GIF_RESYNC_US       100000
+
 // ---------------------------------------------------------------------------
 // Renkler (RGB565)
 // ---------------------------------------------------------------------------
