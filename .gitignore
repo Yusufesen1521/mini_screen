@@ -13,6 +13,10 @@
 compile_commands.json
 CMakeListsPrivate.txt
 
+# Cihaza yuklenen GIF'ler. Kaynaklardan uretiliyor:
+#   python tools/prepare_gif.py
+/data/
+
 # Python (tools/)
 __pycache__/
 *.py[cod]

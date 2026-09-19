@@ -318,14 +318,20 @@ gercek ihtiyaca gore tasarlanabilir.
 - Surukle birak, widget ekleme ve cikarma, boyutlandirma
 - Canli onizleme
 
-**4.3 Tema**
+**4.3 Parlaklik ayari**
+- Arka isik LEDC PWM ile zaten 0-255 arasi ayarlanabiliyor, protokolde
+  `SET_BACKLIGHT` mesaji da var. Eksik olan tek sey arayuzden kontrol.
+- Layout ayarlarinin yaninda bir kaydirici, ve tercihen otomatik mod
+  (gece/gunduz ya da PC'nin ekran parlakligina baglanma).
+
+**4.4 Tema**
 - Renk paleti, font, arka plan
 - En az iki hazir tema
 
-**4.4 Profiller**
+**4.5 Profiller**
 - Birden fazla layout, aralarinda gecis
 
-**4.5 Sema surumleme**
+**4.6 Sema surumleme**
 - Eski config dosyasi yeni surumde acilmali, gerekiyorsa otomatik donusturulmeli
 
 ### Cikis kriterleri

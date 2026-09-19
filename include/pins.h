@@ -48,7 +48,16 @@
 #define BL_PWM_RESOLUTION_BITS  8     // duty 0-255, parlaklik ile birebir
 #define BL_BRIGHTNESS_MAX       255
 #define BL_BRIGHTNESS_OFF       0
-#define BL_BRIGHTNESS_DEFAULT   200
+
+// Tam parlaklik. Onceden 200 idi (yuzde 78), gorsel olarak sonuk
+// bulundugu icin acildi.
+//
+// Hala sonuksa sorun PWM degil surme akimi: panelin LED pini dogrudan
+// GPIO 21'den besleniyor ve ESP32-S3 pin basina 20-40 mA verebiliyor.
+// Arka isik bundan fazlasini isterse pin yetismez. O durumda cozum bir
+// MOSFET ile 3V3'ten surmek, gerilimi yukseltmek degil: modulun uzerindeki
+// akim sinirlama direnci 3.3V icin secilmis, 5V LED'leri yakar.
+#define BL_BRIGHTNESS_DEFAULT   BL_BRIGHTNESS_MAX
 
 // Acilis darbesi: ekran hic goruntu vermese bile firmware calistigini ve
 // arka isik hattinin saglam oldugunu gozle dogrulamak icin.
