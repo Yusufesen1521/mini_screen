@@ -3,9 +3,13 @@
 Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
 
 **Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
-Su anki asama: Faz 0 ve Faz 1 bitti, butun cikis kriterleri
-dogrulandi. Faz 2 basladi. Dil secimi Rust, gerekcesi olculdu ve
-`plans.md` 2.1 icinde. PC kodu `pc/` altinda, ayrintisi `pc/README.md`.
+Su anki asama: **Faz 2, sekiz kriterin besi kapali.** Faz 0 ve Faz 1
+bitti. PC kodu `pc/` altinda Rust ile, ayrintisi `pc/README.md`.
+
+**Devam ederken once `plans.md` icindeki "Faz 2'de kalan is" bolumunu
+oku.** Orada kalan dort is ve bekleyen panel gorus acisi konusu tek tek
+yazili. Ilk yapilacak sey kullaniciya bekleme ekranini sormak: kod
+yazildi ve yuklendi ama gorsel onay alinmadi.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek
@@ -16,6 +20,13 @@ sayi yazilir.
 - ESP32-S3 DevKitC-1, N16R8 varyanti (16 MB flash, 8 MB oktal PSRAM)
 - Lockerbox 3.2" TFT SPI, ILI9341, 240x320, v1.0 (LCDWiki MSP3218 muadili)
 - Breadboard ve erkek-erkek jumper kablolar
+- **Iki USB kablosu.** Kartin iki portu ayni anda takilabilir ve bu
+  guvenli: Espressif kilavuzu "USB-to-UART Port and ESP32-S3 USB Port
+  (either one or both)" diyor ve bunu onerilen varsayilan besleme yolu
+  olarak gosteriyor. Disladigi sey USB ile 5V/3V3 pinlerinden ayni anda
+  beslemek. Ikisini de ayni bilgisayara tak, toprak ortak olsun.
+  Protokol yerlesik USB portundan, `Serial0` loglari UART kopru
+  portundan gider; artik ikisi ayni anda mumkun.
 
 **Dokunmatik YOK, olculerek dogrulandi.** Urun sayfasi dokunmatik diyordu,
 poset "touch: no" diyordu. XPT2046 hatlari (T_CS GPIO 18, T_DO GPIO 13)
@@ -137,6 +148,7 @@ eklerken `Serial.printf` degil `logPrintf` kullan.
 ```bash
 cd pc && build.bat build --release         # PC uygulamasi (Rust)
 cd pc && build.bat test                    # PC testleri
+cd pc && build.bat clippy --all-targets    # lint, CI bunu -D warnings ile kosuyor
 pio run                                    # protokol firmware
 pio run -e gifplay -t upload               # GIF oynatici
 python tools/prepare_gif.py                # gif/ -> data/, ekran olcusune
@@ -153,6 +165,37 @@ Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
 ```bash
 ~/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-addr2line -pfiaC -e .pio/build/esp32-s3-devkitc-1/firmware.elf <adres>
 ```
+
+## Bagli modda calistirma
+
+PC uygulamasi cihaza baglaniyorsa once onu baslat, ekran ancak o zaman
+canli olur. Uygulama kapaliyken cihaz 4 saniye sonra bekleme ekranina
+duser, bu beklenen davranis.
+
+```bash
+cd pc && build.bat build --release
+pc/target/release/mscreen.exe run            # sinirsiz
+pc/target/release/mscreen.exe run --seconds 60
+pc/target/release/mscreen.exe preview out.png  # cihazsiz, tasarim kontrolu
+pc/target/release/mscreen.exe sensors          # sensor kaynaklarini yoklar
+pc/target/release/mscreen.exe sensors --dump   # Afterburner ham girdileri
+```
+
+**GPU ve CPU sicakligi icin MSI Afterburner calisiyor olmali.** Kapaliysa
+o alanlar `None` kalir ve widget o satirlari hic cizmez; bu hata degil,
+tasarim. Afterburner'i kurulumcuya gommek EULA'ya tabi, dogru yaklasim
+tespit edip kullaniciyi yonlendirmek.
+
+## Kritik: `!Serial` baglanti kopma isareti degil
+
+ESP32-S3 yerlesik USB CDC'sinde `!Serial` (HWCDC `operator bool`)
+guvenilmez. Olculdu: aktif trafik sirasinda, son mesajin uzerinden
+43 ms gecmisken "port kapali" dondu. Cihaz saniyeler icinde bekleme
+ekranina girip cikti, arka isik kirpti, panel gorunmez oldu.
+
+Baglantinin koptugunu anlamanin tek guvenilir yolu **sessizlik
+suresi**: `LINK_IDLE_TIMEOUT_MS`. PC bostayken PING gonderiyor, cunku
+dirty tracking yuzunden durgun ekranda hic cerceve gitmiyor.
 
 ## Kritik: Rust derlemesi ve VS 18
 
@@ -220,6 +263,22 @@ Bunlar karara baglandi, yeniden acilmayacak. Gerekcesi `plans.md` icinde.
 - Arduino IDE ile ilgili dosya veya talimat
 - Elde olmayan komponent varsayimi
 - Seri uretim, sertifikasyon, kasa: yedi faz bittikten sonra
+
+## Panel gorus acisi (acik konu)
+
+Kullanici masada ortadan bakinca renklerin kotu, sagdan bakinca hicbir
+seyin gorunmedigini bildirdi. Dikey bakis etkilemiyor.
+
+Teshis: panel 240x320 dikey, biz `DISPLAY_ROTATION 3` ile yatay
+kullaniyoruz. Panelin kendi dikey ekseni, yani TN'de kotu olan eksen,
+ekranin yatay ekseni oluyor. Dikey bakisin etkilememesi bunun kaniti.
+
+**ILI9341'de kontrast registeri yoktur.** Karsiligi gamadir ve
+`src/panel_settings.cpp` gamayi (E0/E1) hic taramamis; VCOM, kare hizi,
+tersleme ve guc gerilimi tarandi. Yani gama el degmemis bir eksen.
+
+Denenecekler `plans.md` icindeki "Faz 2 disina cikan" bolumunde
+sirali. Hicbiri TN panelini duzeltmez, sadece katlanilir yapar.
 
 ## Mevcut kodun yeri
 

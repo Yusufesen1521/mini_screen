@@ -798,6 +798,13 @@ Yani ekran gercekten durgun ama boru hatti her turda isliyor.
 
 Kriter "sifira yakin" diyordu, olculen **tam sifir**.
 
+> **Guncelleme (bekleme ekrani eklendikten sonra):** bu sayi artik
+> 0 degil. Cihaz belirli sure mesaj gelmezse bekleme ekranina dustugu
+> icin PC bostayken 1500 ms'de bir PING gonderiyor. Ayni olcum tekrar
+> yapildi: **7-10 bayt/sn, ortalama 8**, uretilen dikdortgen yine 0.
+> Kriter hala rahat geciyor (hat kapasitesinin yaklasik yuzde 0.004'u)
+> ve karsiliginda canlilik tespiti kazanildi.
+
 ### Canli ekranda trafik
 
 Saat saniyede bir, sistem paneli yarim saniyede bir tazeleniyor.
@@ -997,3 +1004,99 @@ Fark, cihazin bu kosu icin yeniden baslamamis olmasindan geliyor:
 kosunun log'unda acilis banner'i yok, yani sayac bugunun butun
 oturumlarinin toplami. Faz 1'de ogrenilen "PC ile cihazin saydigini
 karsilastir" kurali geregi kovalandi ve acikligi giderildi.
+
+---
+
+## Faz 2: bekleme ekrani ve baglanti kopma testleri
+
+Tarih: 2026-09-19
+
+### Tasarim catismasi: dirty tracking ile canlilik tespiti
+
+Cihaz "kare gelmiyorsa PC gitti" diyemiyor. Dirty tracking sayesinde
+ekran durgunken PC dakikalarca hicbir sey gondermiyor ve bu normal
+calisma. Bu yuzden:
+
+- Cihaz sayaci **herhangi bir gecerli mesajla** sifirlaniyor.
+- PC bostayken **1500 ms'de bir PING** gonderiyor.
+- Cihazin zaman asimi **4000 ms**, yani yaklasik 2.7 kat pay var.
+
+Bedeli olculdu: durgun ekranda trafik 0'dan 8 bayt/sn'ye cikti.
+
+### Olcerek bulunan hata: `!Serial` guvenilmez
+
+Ilk surumde ikinci bir olcut daha vardi: CDC baglilik durumu
+(`!Serial`, HWCDC `operator bool`). Mantik "port kapandiysa PC gitti"
+idi ve aninda tepki verecekti.
+
+Kullanici ekranda kirpma bildirdi: arka isik kisilmiyor, "arada bir
+kirpiyor", panel hic gorunmuyordu.
+
+Tahmin etmek yerine cihaza hangi kosulun tetikledigini kaydettirdim:
+
+```
+standby sebep: cdc=1 idle=0 (43 ms)
+```
+
+**Son mesajin uzerinden 43 ms gecmisken port kapali sanildi.** Yani
+`!Serial`, aktif trafik sirasinda bile "bagli degil" donuyor. Cihaz
+saniyeler icinde beklemeye girip cikiyor, `backlightSet` 220 ile 70
+arasinda gidip geliyor (kullanicinin gordugu kirpma) ve `drawStandby`
+paneli surekli siliyordu.
+
+Olcum: 30 saniyede 2 kez sahte gecis. Kaldirildiktan sonra 40 saniyede
+sifir.
+
+**Kural:** ESP32-S3 yerlesik USB CDC'sinde `!Serial` bir baglanti
+kopma isareti olarak kullanilmaz. Tek guvenilir olcut sessizlik suresi.
+
+### Ikinci hata: PONG cerceveleri birikiyordu
+
+PING eklenince cihaz her birine PONG donuyor, ama PC tarafinda PONG
+hicbir yerde tuketilmiyordu ve `inbox` sinirsiz buyuyordu.
+
+| Durum | ACK zaman asimi orani |
+|---|---|
+| PING oncesi (106 dk kosu) | 4 / 106 dk |
+| PING var, PONG tuketilmiyor | **2 / 40 sn** |
+| PONG tuketiliyor, inbox sinirli | 1 / 180 sn |
+
+PONG artik tuketiliyor ve `inbox` 64 cerceve ile sinirli.
+
+### Baglanti kopma testleri
+
+**20 yazilim cevrimi** (ac, el sikis, kapat; kabloya dokunmadan):
+
+| | |
+|---|---|
+| Basarili | **20 / 20** |
+| Sure | ortalama 681 ms, en dusuk 39, en yuksek 2173 |
+| Cihaz sayaclari | dusen 0, CRC 0, senkron 0 |
+
+En uzun deneme 2173 ms; orada `Link::open_retry` devreye girdi, yani
+portun yeniden numaralandirma penceresine denk geldi ve mekanizma
+isini yapti.
+
+**5 fiziksel cevrim** (kablo cekilip takildi): bes seferin besinde de
+cihaz kendine geldi ve acilis ekranini cizdi. Elle mudahale
+gerekmedi. Kablo cekilince guc de kesildiginden cihaz soguk acilis
+yapiyor; bekleme ekrani bu durum icin degil, **cihaz gucluyken PC
+uygulamasinin kapanmasi** icin.
+
+Kriter 20 fiziksel cevrim istiyordu. Kullanici konnektor asinmasi
+endisesiyle sayiyi dusurmek istedi. Not: USB konnektorleri binlerce
+cevrim icin derecelendirilir, 20 cevrim mekanik olarak onemsiz. Yine
+de karar kullanicinin; kapsam 5 fiziksel artı 20 yazilim cevrimi
+olarak daraltildi ve yazilim tarafi asil riskli olan yeniden
+numaralandirma yolunu zaten kapsiyor.
+
+### Dogrulanmayi bekleyen
+
+Bekleme ekraninin **gorsel olarak** dogru calistigi henuz kullanici
+tarafindan onaylanmadi. Duzeltilmis firmware yuklendi ve dizi
+kosuldu ama kullanici molaya cikti. Bir sonraki oturumda sorulacak:
+
+- Uygulama calisirken panel duzgun mu, kirpma bitti mi
+- Kapaninca yaklasik 4 saniye sonra bekleme ekrani geliyor mu
+- Arka isik kisiliyor mu
+- Tekrar acilinca panel tam geri geliyor mu, kalinti var mi

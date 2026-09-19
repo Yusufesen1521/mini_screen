@@ -338,9 +338,18 @@ disi).
       goruntulendigi elle dogrulanmadi, ve Linux'ta cihaz takili gercek
       bir kosu yapilmadi. Ikisi de kullanicinin elindeki donanimla
       yapilacak.
-- [ ] Cihaz takilinca otomatik bulunuyor, cikarilinca uygulama cokmuyor,
-      tekrar takilinca kendiliginden baglaniyor. Bu dongu 20 kez arka arkaya
-      sorunsuz.
+- [x] Cihaz takilinca otomatik bulunuyor, cikarilinca uygulama cokmuyor,
+      tekrar takilinca kendiliginden baglaniyor.
+      **Kapsam daraltildi, gerekcesi asagida.** 20 yazilim cevrimi
+      (ac, el sikis, kapat): **20/20**, ortalama 681 ms, en uzun 2173 ms
+      (orada `open_retry` devreye girdi). 5 fiziksel cevrim: besinde de
+      cihaz kendine geldi, elle mudahale gerekmedi.
+
+      Kriter 20 fiziksel cevrim istiyordu. Kullanici konnektor asinmasi
+      endisesiyle sayiyi dusurmek istedi ve karar ona birakildi. Not
+      olarak: USB konnektorleri binlerce cevrim icin derecelendirilir,
+      20 cevrim mekanik olarak onemsiz. Yazilim cevrimleri asil riskli
+      olan yeniden numaralandirma yolunu zaten kapsiyor.
 - [x] Widget soyutlamasi kanitlanmis: ikinci bir sahte widget eklemek
       cekirdekte tek satir degisiklik gerektirmiyor. Kanit: ucuncu bir
       sahte widget eklendi, `git status` sadece tek yeni dosya gosterdi,
@@ -365,8 +374,86 @@ disi).
       istegiyle ertelendi. **Kapatmadan once cozulmesi gereken:**
       yaklasik 26 dakikada bir, trafikten bagimsiz olarak tek bir ACK
       dusuyor (106 dakikada 4 kez). Ayrintisi `docs/measurements.md`.
-- [ ] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
-      kareyle kalmiyor
+- [~] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
+      kareyle kalmiyor. **Yazildi ve yuklendi, gorsel onay bekliyor.**
+      Cihaz 4 saniye mesaj gelmezse bekleme ekranina dusuyor (koyu
+      zemin, BAGLANTI YOK, arka isik 220'den 70'e). PC bostayken
+      1500 ms'de bir PING gonderiyor, cunku dirty tracking yuzunden
+      durgun ekranda hic cerceve gitmiyor.
+      Kullanici molaya cikmadan once dogrulayamadi; bir sonraki
+      oturumda sorulacak. Ayrintisi `docs/measurements.md`.
+
+### Faz 2'de kalan is
+
+Faz 2'nin sekiz kriterinden besi kapandi. Kalanlar ve tam olarak ne
+gerektigi:
+
+**1. Bekleme ekraninin gorsel onayi** (kriter isaretli ama `~`)
+
+Kod yazildi, firmware yuklendi, dizi kosuldu. Kullaniciya sorulacak:
+uygulama calisirken panel duzgun mu ve kirpma bitti mi; kapaninca
+yaklasik 4 saniye sonra bekleme ekrani geliyor mu; arka isik kisiliyor
+mu; tekrar acilinca panel tam geri geliyor mu, kalinti var mi.
+
+Onceki denemede kullanici kirpma bildirmisti, sebebi bulunup
+duzeltildi (`!Serial`), ama duzeltme sonrasi henuz goz onayi yok.
+
+**2. Seyrek ACK zaman asimi**
+
+Trafikten bagimsiz, dusuk oranli, sebebi bulunamadi.
+
+| Olcum | Oran |
+|---|---|
+| 106 dakikalik kosu | 4 / 106 dk, araliklari 25-29 dk gibi carpici duzenli |
+| PING eklendikten sonra, PONG tuketilmezken | 2 / 40 sn |
+| PONG tuketildikten sonra | 1 / 180 sn |
+
+PONG birikmesi gercek bir hataydi ve duzeldi. Kalan oranin eski
+seviyeye dondugu **dogrulanmadi**, nadir olay oldugu icin uzun bir
+kosu gerekiyor. 24 saatlik kriter kapatilmadan once cozulmeli.
+
+Suphe listesi: Windows USB secici askiya alma, cihaz tarafinda
+periyodik bir is, yaklasik 26 dakikada dolan bir tampon durumu.
+
+**3. 24 saat kesintisiz kosu**
+
+106 dakikalik ara dogrulama temiz cikti (bellek 45.4 -> 45.5 MB,
+suruklenme yok). Tam sureli kosu kullanicinin istegiyle ertelendi.
+Madde 2 cozulmeden baslatmanin anlami yok.
+
+**4. macOS ve Linux'ta gercek calisma**
+
+CI uc platformda da derliyor ve Linux ile Windows'ta testler geciyor.
+Eksik olan: macOS'ta temel metriklerin ekranda goruldugunun elle
+dogrulanmasi ve Linux'ta cihaz takili bir kosu. Kullanicinin macOS
+cihazi ve Ubuntu VPS'i var.
+
+### Faz 2 disina cikan, sirada bekleyen konu
+
+**Panelin gorus acisi.** Kullanici masada ortadan bakinca renklerin
+kotu, sagdan bakinca hicbir seyin gorunmedigini bildirdi. Teshis:
+panel 240x320 dikey, biz `DISPLAY_ROTATION 3` ile yatay kullaniyoruz,
+yani panelin kendi dikey ekseni (TN'de kotu olan eksen) ekranin yatay
+ekseni oluyor. Dikey bakisin etkilememesi bunun kaniti.
+
+Konusuldu ama yapilmadi, oncelik sirasina gore:
+
+1. Acik tema denemesi. Sadece PC tarafi, TN'de acik zemin acida daha
+   kararli. En ucuz ve en yuksek getirili deneme.
+2. `DISPLAY_ROTATION` 1 denemesi. Iyi tarafi soldan saga tasir.
+3. Cihazi masada yana cevirmek. Bedava.
+4. Gama kalibrasyonu. `paneltune` su an VCOM, kare hizi, tersleme ve
+   guc gerilimini tariyor; **gama (E0/E1) hic denenmemis.** TN'de
+   eksen disi bozulmanin dogru kolu bu. Bir kerelik kalibrasyon,
+   butona baglanacak bir sey degil.
+5. Parlaklik butonu. Kolay ama bu sorun icin zayif kol, ayrica plan
+   4.3'un isi.
+
+**ILI9341'de kontrast registeri yoktur.** Kullanici "kontrast" diye
+sordu, karsiligi gamadir.
+
+Hicbiri TN panelini duzeltmez, sadece katlanilir yapar. Gercek cozum
+ertelenen kararlar arasindaki IPS panel.
 
 ---
 
