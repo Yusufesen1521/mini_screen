@@ -3,9 +3,8 @@
 Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
 
 **Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
-Su anki asama: Faz 0 ve Faz 1'in buyuk kismi bitti. Kalan tek is 30
-dakikalik dayaniklilik kosusunun duzeltilmis aracla tekrari; ayrintisi
-`plans.md` sonunda.
+Su anki asama: Faz 0 ve Faz 1 bitti, butun cikis kriterleri
+dogrulandi. Sirada Faz 2, masaustu uygulamasi.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek

@@ -390,12 +390,89 @@ karsilastirilinca yakalandi.
 **Ders: PC tarafinin saydigi ile cihazin saydigi her kosuda
 karsilastirilmali.** Tutmuyorsa once araci suphelen.
 
-### Kalan
+### Duzeltilmis kosu: 30 dakika
 
-30 dakikalik kosu duzeltilmis aracla tekrarlanmali. Ilk kosu guvenilirlik
-kriterini zaten gecti (25805 cerceve, sifir hata) ve ustelik yuk buyudugu
-icin daha zor kosullarda gecti; yine de duzgun sayilarla bir kez daha
-kosulmali.
+Kabul kosusu. Once `conformance` calistirildi, 15 testin 15'i gecti.
+
+| | |
+|---|---|
+| Sure | 30.0 dk |
+| Gonderilen kare | 44391 |
+| Cihazin isledigi bolge | 133176 (= 44392 x 3) |
+| Ortalama | 0.18 MB/s, **24.7 FPS** |
+| Dusen | **0** |
+| Baslik CRC hatasi | **0** |
+| Payload CRC hatasi | **0** |
+| Senkron kaybi | **0** |
+| NACK / ACK zaman asimi | **0 / 0** |
+| Heap | 352928 -> 352928 (**+0 bayt, %0.00**) |
+| PSRAM | 8000863 -> 8000863 (**+0 bayt**) |
+
+Kare hizi bastan sona duz. 30 saniyelik dilimler 20. dakikadan sonra
+sirasiyla 740, 740, 742, 740, 741, 741, 741, 741, 741, 741, 741, 741,
+741, 741, 740, 740, 741 kare. Ilk kosudaki dusus tamamen kayboldu,
+yani o dusus gercekten test aracinin kumulatif gurultusundendi.
+
+PC 44391 kare sayarken cihaz 133176 bolge isledi, yani 44392 kare
+karsiligi. Bir kare fark el sikisma sirasinda gonderilen kareden
+geliyor; 5 dakikalik kosuda da ayni birebir fark vardi (6602 karsiligi
+6603). Sayaclar tutuyor.
+
+**100 bin cerceve kriteri de bu kosuyla karsilandi.** Her bolge ayri bir
+protokol cercevesi ve her birinin kendi baslik ve payload CRC'si var;
+133176 cerceve, sifir CRC hatasi.
+
+### Kablo cekip takma testi
+
+Elle yapildi, otomatiklestirilemez. 5 dakikalik kosunun 36. saniyesinde
+(736 kare gonderilmisti) kablo cekildi, birkac saniye sonra takildi.
+
+**Onemli sart: USB kartin tek besleme kaynagi.** Ayri bir guc hatti yok,
+yani kablo cekilince cihaz tamamen guc kaybediyor ve takilinca soguk
+acilis yapiyor. Kriterin "reset gerekmiyor" kismi bu yuzden "elle BOOT
+ya da RESET basmak, yeniden yukleme yapmak gerekmiyor" olarak okundu.
+
+Cekildiginde:
+
+| | |
+|---|---|
+| Ekran | Arka isikla birlikte tamamen sondu (guc kesildi) |
+| Test araci | 5 sn yazma zaman asimi, sonra `SerialTimeoutException` |
+
+Takildiginda:
+
+| | |
+|---|---|
+| Port | COM5 kendiliginden geri geldi, ayni numara, ayni seri no |
+| Elle mudahale | Yok. BOOT+RESET yok, yeniden yukleme yok |
+| Kendini sinama | TAMAM (crc8, crc16, dort rle16 durumu) |
+| Ekran | Kendiliginden geri geldi, oncesinde 0.5 sn boslik |
+| El sikisma | Sorunsuz: protokol 1, 320x240, rx slot 3 |
+
+**0.5 saniyelik boslik kasitli.** `setup()` once arka isigi
+`BL_BRIGHTNESS_OFF` yapiyor, `tft.init()` ve tampon ayirmadan sonra
+`drawSplash()` cizip arka isigi ancak o zaman aciyor. Panel ilklenirken
+copu gostermemek icin. Kusur degil, tasarim.
+
+Takma sonrasi 2 dakikalik dogrulama kosusu, cekmeden onceki 30 dakikalik
+kosuyla yan yana:
+
+| | Cekmeden once | Taktiktan sonra |
+|---|---|---|
+| Ortalama | 24.7 FPS | 24.6 FPS |
+| Heap | 352928 (+0) | 352928 (+0) |
+| Dusen / CRC / senkron | 0 / 0 / 0 | 0 / 0 / 0 |
+| NACK / ACK zaman asimi | 0 / 0 | 0 / 0 |
+
+Cihaz sayaci 0'dan basladi (8859 = 2953 x 3), soguk acilis beklendigi
+gibi. Baglanti kopma oncesiyle ayni hizda devam ediyor.
+
+### Bu testte cikan is: arac kopmayi karsilamiyor
+
+`link_test.py` kablo kopunca traceback ile oluyor. Faz 1 kriteri cihaz
+hakkinda oldugu icin bunu engellemiyor, ama Faz 2'nin cikis
+kriterlerinden biri zaten "cihaz cikarilinca uygulama cokmuyor". Duzgun
+kopma karsilama masaustu uygulamasinda yapilacak, olcum aracinda degil.
 
 ---
 

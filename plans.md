@@ -183,39 +183,40 @@ Bu olcumun protokole etkisi:
 - [x] Bolgesel guncelleme keyfi (x, y, w, h) dikdortgen ile calisiyor
 - [x] Sinir kontrolu: ekran disina tasan istek reddediliyor, NACK donuyor,
       cihaz cokmuyor
-- [ ] 30 dakika kesintisiz akis: senkron kaybi yok, CRC hatasi yok
+- [x] 30 dakika kesintisiz akis: senkron kaybi yok, CRC hatasi yok
+      (44391 kare, 133176 bolge, dusen 0, CRC 0, senkron 0, 24.7 FPS,
+      heap +0 bayt)
 - [x] Bellek sizintisi yok (5 dk kosuda +0 bayt): test basindaki ve sonundaki bos heap farki
       yuzde 1'in altinda
-- [ ] Kablo akis ortasinda cekilip takildiginda cihaz kendini topluyor,
-      reset gerekmiyor
+- [x] Kablo akis ortasinda cekilip takildiginda cihaz kendini topluyor,
+      reset gerekmiyor (elle mudahale yok, 0.5 sn kasitli arka isik
+      gecikmesi disinda ekran kendiliginden geri geliyor, sonrasinda
+      24.6 FPS ile kopma oncesiyle ayni)
 - [x] Kasitli bozuk cerceve enjekte edildiginde cihaz cokmuyor, NACK donuyor
       ve sonraki gecerli cerceveyi isliyor
 - [x] Protokol surum alani calisiyor: eski cihaz yeni PC ile konusursa
       ikisi de temiz hata veriyor, tanimsiz davranis yok
-- [ ] 100 bin cerceve boyunca CRC hata sayisi 0
+- [x] 100 bin cerceve boyunca CRC hata sayisi 0 (30 dakikalik kosuda
+      133176 cerceve, baslik ve payload CRC hatasi 0)
 - [x] GIF flash'tan oynuyor, kare zamanlamasi GIF'in kendi suresine yuzde 10
       dogrulukla uyuyor (olculen 14.95-15.18 FPS, kaynak 15.0)
 - [x] `docs/protocol.md` yazilmis ve gercek kodla uyumlu
 
-### Faz 1'de kalan tek is
+### Faz 1 kapandi
 
-**30 dakikalik dayaniklilik kosusu, duzeltilmis aracla.**
+Butun cikis kriterleri tek tek dogrulandi. Son iki is:
 
-Ilk kosu guvenilirlik kriterini gecmisti (25805 cerceve, sifir hata) ama
-olcum araci kumulatif olarak goruntuyu bozdugu icin FPS rakamlari
-anlamsizdi. Arac duzeltildi ve 5 dakikalik kosu temiz cikti (6602 kare,
-dusen 0, heap +0 bayt). Geriye tam sureli kosu kaldi.
+- **30 dakikalik dayaniklilik kosusu:** 44391 kare, 133176 bolge, dusen 0,
+  CRC 0, senkron 0, 24.7 FPS, heap +0 bayt. Kare hizi bastan sona duz.
+- **Kablo cekip takma:** elle yapildi. Cihaz soguk acilis yapiyor (USB tek
+  besleme kaynagi), elle mudahale gerekmiyor, port ayni numarayla geri
+  geliyor, akis kopma oncesiyle ayni hizda devam ediyor.
 
-Nasil yapilir:
+Ikisinin de ayrintisi ve sayilari `docs/measurements.md` icinde.
 
-1. Kabloyu **yerlesik USB portuna** tak (protokol orada, UART portunda
-   degil)
-2. `pio run -t upload` ile protokol firmware'ini yukle
-3. `python tools/link_test.py conformance` ile once uyum testleri
-4. `python tools/link_test.py endurance --minutes 30`
-
-Beklenen: dusen 0, CRC hatasi 0, senkron kaybi 0, ACK zaman asimi 0,
-heap farki yuzde 1'in altinda.
+Faz 2'ye tasinan tek is: `link_test.py` kablo kopunca traceback ile
+oluyor. Olcum araci oldugu icin Faz 1'i engellemedi; duzgun kopma
+karsilama masaustu uygulamasinin isi ve zaten Faz 2 kriterlerinden biri.
 
 ### Bilinen riskler
 
