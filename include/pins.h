@@ -40,6 +40,13 @@
 // Arka isik. TFT_eSPI'ye birakilmadi, LEDC ile PWM surulyor.
 #define PIN_TFT_BL    21
 
+// Test butonu. Iki bacakli mekanik switch: bir bacak bu pine, oteki GND'ye.
+// Dahili pull-up kullaniliyor, basilinca LOW okunuyor, harici direnc yok.
+//
+// GPIO 4 secildi: bos, strapping gorevi yok, dahili pull-up destekliyor.
+// GPIO 26'ya BAGLAMA, orasi oktal PSRAM tarafindan kullaniliyor.
+#define PIN_BUTTON    4
+
 // ---------------------------------------------------------------------------
 // Arka isik PWM (LEDC)
 // ---------------------------------------------------------------------------
@@ -133,7 +140,10 @@
 // ---------------------------------------------------------------------------
 // GIF oynatici
 // ---------------------------------------------------------------------------
-#define GIF_PATH            "/getsuga.gif"
+// Olcum bittikten sonra surekli oynatilacak dosya. Dosya sisteminde
+// yoksa bulunan son GIF oynatilir. Degistirmek icin sadece firmware
+// yuklemek yeterli, dosya sistemini tekrar yazmaya gerek yok.
+#define GIF_PLAY_FILE       "/getsuga.gif"
 
 // Olcekleme haritalarinin boyu. Kaynak GIF bundan buyukse reddedilir.
 #define GIF_MAX_SRC_DIM     1024
@@ -143,6 +153,24 @@
 
 // Surekli oynatmada kac ms'de bir hiz raporu basilsin
 #define GIF_REPORT_MS       5000
+
+// ---------------------------------------------------------------------------
+// Test butonu
+// ---------------------------------------------------------------------------
+#define BUTTON_DEBOUNCE_MS  30
+#define BUTTON_LONG_MS      600    // bu sureden uzun basis parlaklik degistirir
+
+// Buton basilinca alt seritte gosterilen durum yazisi
+#define STATUS_HEIGHT       18
+#define STATUS_SHOW_MS      2000
+
+// Uzun basista sirayla gezilen parlaklik seviyeleri
+#define BL_LEVELS           { 32, 64, 128, 180, 220, 255 }
+#define BL_LEVEL_COUNT      6
+#define BL_LEVEL_START      5      // BL_LEVELS icinde acilis seviyesi
+
+// Ayni anda taninan en fazla GIF sayisi
+#define GIF_MAX_FILES       8
 
 // Beklerken bu suredan uzunsa sirayi birak, kisaysa mesgul bekle
 #define GIF_YIELD_US        2000

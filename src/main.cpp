@@ -205,6 +205,11 @@ static void pushTask(void *arg)
     }
 
     xQueueSend(freeBufs, &job.bufIndex, portMAX_DELAY);
+
+    // Sirayi birak. Kuyruk surekli doluyken bu gorev hic bloklanmaz ve
+    // ayni cekirdekteki IDLE gorevi calisamaz; task watchdog sistemi
+    // resetler. GIF oynaticida tam olarak bu yasandi.
+    vTaskDelay(1);
   }
 }
 

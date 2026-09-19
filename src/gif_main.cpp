@@ -81,6 +81,21 @@ static uint32_t frameUsMax = 0;
 static uint32_t pushedPixels = 0;
 static uint32_t lastEnqueueUs = 0;
 
+// Dosya sisteminde bulunan GIF'ler ve su an oynayan
+static char    gifList[GIF_MAX_FILES][64];
+static uint8_t gifCount = 0;
+static uint8_t gifIndex = 0;
+
+// Parlaklik seviyeleri, uzun basista sirayla geziliyor
+static const uint8_t blLevels[BL_LEVEL_COUNT] = BL_LEVELS;
+static uint8_t blIndex = BL_LEVEL_START;
+
+// Alt seritteki durum yazisi ne zamana kadar dursun
+static uint32_t statusUntilMs = 0;
+
+// Zamanlama, GIF degisince sifirlaniyor
+static uint32_t nextFrameUs = 0;
+
 // ---------------------------------------------------------------------------
 // Dosya geri cagirmalari
 // ---------------------------------------------------------------------------
@@ -225,6 +240,13 @@ static void gifPushTask(void *arg)
     tft.pushPixels(job.pixels, (uint32_t)job.w * job.h);
     tft.endWrite();
     xQueueSend(gifFreeBufs, &job.bufIndex, portMAX_DELAY);
+
+    // Sirayi birak. Kuyruk surekli doluyken bu gorev hic bloklanmiyor ve
+    // ayni cekirdekteki IDLE gorevi calisamiyor; task watchdog 5 saniye
+    // sonra sistemi resetliyor. Hizli cozulen bir GIF'te (rgb_test2, 70
+    // FPS cozme) tam olarak bu oldu. Bir tick birakmak kare basina 1 ms,
+    // 15 FPS'te yuzde 1.5 gibi bir maliyet.
+    vTaskDelay(1);
   }
 }
 
@@ -386,10 +408,135 @@ static bool openAndMeasure(const char *path)
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Durum yazisi
+//
+// Buton basilinca alt seritte hangi GIF ve hangi parlaklikta oldugumuz
+// gosteriliyor, birkac saniye sonra siliniyor. Kare tamponu elimizde
+// oldugu icin silerken goruntu kaybolmuyor, altta kalan kisim tampondan
+// geri basiliyor.
+// ---------------------------------------------------------------------------
+
+static void showStatus()
+{
+  pushDrain();   // basma gorevi ekranla ugrasirken araya girme
+
+  const int16_t y0 = SCREEN_HEIGHT - STATUS_HEIGHT;
+  char text[64];
+  const char *name = gifList[gifIndex];
+  snprintf(text, sizeof(text), "%s   parlaklik %u",
+           (name[0] == '/') ? &name[1] : name,
+           (unsigned)blLevels[blIndex]);
+
+  tft.fillRect(0, y0, SCREEN_WIDTH, STATUS_HEIGHT, COLOR_BACKGROUND);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(COLOR_TEXT, COLOR_BACKGROUND);
+  tft.drawString(text, 4, y0 + 1, FONT_LABEL);
+
+  statusUntilMs = millis() + STATUS_SHOW_MS;
+  logPrintf("%s\n", text);
+}
+
+static void clearStatus()
+{
+  pushDrain();
+
+  const int16_t y0 = SCREEN_HEIGHT - STATUS_HEIGHT;
+  tft.fillRect(0, y0, SCREEN_WIDTH, STATUS_HEIGHT, COLOR_BACKGROUND);
+
+  // Seridin goruntuyle kesisen kismini tampondan geri bas
+  const int16_t top = max(y0, dstY0);
+  const int16_t bot = min((int16_t)(y0 + STATUS_HEIGHT), (int16_t)(dstY0 + dstH));
+  if (bot > top) {
+    tft.startWrite();
+    tft.setAddrWindow(dstX0, top, dstW, bot - top);
+    for (int16_t y = top; y < bot; y++) {
+      tft.pushPixels(&canvasBuf[(size_t)(y - dstY0) * dstW], dstW);
+    }
+    tft.endWrite();
+  }
+  statusUntilMs = 0;
+}
+
+// ---------------------------------------------------------------------------
+// GIF secimi
+// ---------------------------------------------------------------------------
+
+static bool openGifAt(uint8_t index)
+{
+  if (index >= gifCount) {
+    return false;
+  }
+  pushDrain();
+  gif.close();
+
+  if (!gif.open(gifList[index], gifOpen, gifCloseCb, gifRead, gifSeek, gifDraw)) {
+    logPrintf("%s acilamadi, kod %d\n", gifList[index], gif.getLastError());
+    return false;
+  }
+
+  gifIndex = index;
+  buildMaps(gif.getCanvasWidth(), gif.getCanvasHeight());
+  memset(canvasBuf, 0, (size_t)SCREEN_WIDTH * SCREEN_HEIGHT * 2);
+  tft.fillScreen(COLOR_BACKGROUND);
+  nextFrameUs = 0;   // zamanlama bastan kurulsun
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Buton
+//
+// Kisa basis: sonraki GIF. Uzun basis: sonraki parlaklik seviyesi.
+// Ikisi de goruntuyu kesmeden calisiyor, oynatma devam ediyor.
+// ---------------------------------------------------------------------------
+
+static void pollButton()
+{
+  static bool     lastRaw = true;     // pull-up, bosta HIGH
+  static uint32_t changeMs = 0;
+  static bool     pressed = false;
+  static uint32_t pressMs = 0;
+  static bool     longFired = false;
+
+  const bool raw = (digitalRead(PIN_BUTTON) != LOW);
+  const uint32_t now = millis();
+
+  if (raw != lastRaw) {
+    lastRaw = raw;
+    changeMs = now;
+    return;
+  }
+  if ((now - changeMs) < BUTTON_DEBOUNCE_MS) {
+    return;   // henuz oturmadi
+  }
+
+  const bool down = !raw;
+
+  if (down && !pressed) {
+    pressed = true;
+    pressMs = now;
+    longFired = false;
+  } else if (down && pressed && !longFired &&
+             (now - pressMs) >= BUTTON_LONG_MS) {
+    longFired = true;
+    blIndex = (uint8_t)((blIndex + 1) % BL_LEVEL_COUNT);
+    backlightSet(blLevels[blIndex]);
+    showStatus();
+  } else if (!down && pressed) {
+    pressed = false;
+    if (!longFired && gifCount > 1) {
+      openGifAt((uint8_t)((gifIndex + 1) % gifCount));
+      showStatus();
+    }
+  }
+}
+
 void setup()
 {
   logBegin();
   logPrintf("\n=== mini_screen GIF oynatici ===\n");
+
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
 
   backlightBegin();
   backlightSet(BL_BRIGHTNESS_OFF);
@@ -398,7 +545,7 @@ void setup()
   tft.setRotation(DISPLAY_ROTATION);
   tft.fillScreen(COLOR_BACKGROUND);
   tft.setSwapBytes(true);   // palet little-endian RGB565, panel big-endian
-  backlightSet(BL_BRIGHTNESS_DEFAULT);
+  backlightSet(blLevels[blIndex]);
 
   if (!LittleFS.begin(false)) {
     logPrintf("HATA: LittleFS baglanamadi. once 'pio run -e gifplay -t uploadfs'\n");
@@ -432,9 +579,10 @@ void setup()
 
   gif.begin(GIF_PALETTE_RGB565_LE);
 
-  char lastGif[64] = {0};
+  // Dosya sistemindeki GIF'leri topla ve her birini olc
   File root = LittleFS.open("/");
-  for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+  for (File f = root.openNextFile(); f && gifCount < GIF_MAX_FILES;
+       f = root.openNextFile()) {
     const char *name = f.name();
     const size_t len = strlen(name);
     if (len < 4 || strcasecmp(&name[len - 4], ".gif") != 0) {
@@ -443,23 +591,32 @@ void setup()
     char path[64];
     snprintf(path, sizeof(path), "%s%s", (name[0] == '/') ? "" : "/", name);
     f.close();
+
     if (openAndMeasure(path)) {
-      strncpy(lastGif, path, sizeof(lastGif) - 1);
+      strncpy(gifList[gifCount], path, sizeof(gifList[0]) - 1);
+      gifCount++;
       gif.close();
     }
   }
 
-  if (lastGif[0] == '\0') {
+  if (gifCount == 0) {
     logPrintf("\nDosya sisteminde GIF bulunamadi.\n");
     return;
   }
 
-  logPrintf("\nSurekli oynatiliyor: %s\n", lastGif);
-  buildMaps(gif.getCanvasWidth(), gif.getCanvasHeight());
-  gif.open(lastGif, gifOpen, gifCloseCb, gifRead, gifSeek, gifDraw);
-  buildMaps(gif.getCanvasWidth(), gif.getCanvasHeight());
-  tft.fillScreen(COLOR_BACKGROUND);
-  memset(canvasBuf, 0, (size_t)dstW * dstH * 2);
+  // Tercih edilen dosyadan basla, yoksa ilkinden
+  uint8_t startIndex = 0;
+  for (uint8_t i = 0; i < gifCount; i++) {
+    if (strcmp(gifList[i], GIF_PLAY_FILE) == 0) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  logPrintf("\n%u GIF bulundu. Butona kisa bas: sonraki GIF, "
+            "uzun bas: parlaklik.\n", (unsigned)gifCount);
+  openGifAt(startIndex);
+  showStatus();
 }
 
 void loop()
@@ -469,7 +626,11 @@ void loop()
     return;
   }
 
-  static uint32_t nextFrameUs = 0;
+  pollButton();
+
+  if (statusUntilMs != 0 && (int32_t)(millis() - statusUntilMs) >= 0) {
+    clearStatus();
+  }
 
   int delayMs = 0;
   resetDirty();
