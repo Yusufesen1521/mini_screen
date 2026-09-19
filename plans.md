@@ -244,9 +244,56 @@ yazilacak; bu asiri muhendislik degil, Faz 4'te bastan yazmayi onlemek.
 
 ### Isler
 
-**2.1 Teknoloji secimi**
-- Tek kod tabani, uc platform. Rust ve Tauri ya da Go onerilir; karar faz
-  basinda verilecek ve gerekcesi buraya yazilacak.
+**2.1 Teknoloji secimi** (karar verildi: Rust)
+
+Aday listesi on iki dile genisletildi ve projenin kendi gereksinimlerine
+gore elendi. Ayrintili karsilastirma ve olcumler `docs/measurements.md`
+icindeki "Faz 2 hazirligi" bolumunde.
+
+Once olculdu, sonra secildi. Iki olcum yapildi:
+
+- **Kare basina protokol maliyeti** (donusum + diff + RLE16): Rust 0.079
+  ms, C++ 0.086, C# 0.139, Python 8.10. Butce yuzde 3 iken en yavas ciddi
+  aday bile yuzde 0.34'te kaliyor. **Bu kriter dil secimini
+  belirlemiyor**, sadece saf yorumlanan dilleri eliyor.
+- **Rasterleme**: 0.636 ms/kare, boru hattinin yuzde 90'i. Ama bunun da
+  yuzde 97'si kenar yumusatmali vektor yolundan geliyor ve o maliyet
+  dilden bagimsiz.
+
+Yani performans ayirt edici cikmadi. Karar geri kalan olculere dayaniyor:
+
+**Rust secildi, cunku:**
+
+1. Faz 2 bastan sona daemon isi. Sekiz cikis kriterinin hicbiri GUI
+   istemiyor. Rust'in en guclu, C#'in avantajlarinin hic devreye girmedigi
+   alan tam olarak burasi.
+2. H maddesinin surekli calisan tarafi Rust'a yakisiyor: GC yok, calisma
+   zamani yok, bellek ayak izi kucuk, davranis ongorulebilir.
+3. Tek binary, calisma zamani bagimliligi yok. Uc platforma dagitimin en
+   sade hali.
+4. NVML ve ADLX C ABI'si uzerinden konusuluyor, Rust FFI'si dogal.
+
+**Bedeli kabul edildi:**
+
+- Faz 3'te SMTC. WinRT'nin referans dili C#, Rust'ta `windows-rs` ile
+  calisir ama belirgin daha ayrintili kod yazilir. Bu bilinerek giriliyor.
+- Faz 4'te editor. Rust GUI ekosistemi Avalonia kadar olgun degil.
+
+**Faz 4'un editor karari bu fazda verilmiyor.** Cekirdek en bastan
+disaridan konusulan bir servis olarak tasarlaniyor (bak: 2.2). Editor
+Rust'ta (`egui` gibi) da yazilabilir, IPC uzerinden baska bir dilde de.
+O karar elde calisan bir cekirdek varken, gercek olcumlerle verilecek.
+
+**Elenenler ve gerekcesi:** Go (WinRT baglamasi olgun degil, ADLX cgo
+uzerinden zahmetli, Skia sinifi rasterleyici yok), C# (teknik olarak cok
+guclu aday, GUI ve SMTC'de onde, ama Faz 2 kapsaminda avantajlari
+devreye girmiyor), C++ (yetenekli ama uc platform bagimlilik yonetimi ve
+bellek guvenligi yuku tek kisilik projede orantisiz), Java ve Scala
+(WinRT yolu kapali), JavaScript/Electron (bosta CPU ve bellek butcesini
+tek basina patlatiyor), Python ve Ruby (piksel dongusu butceyi asiyor),
+Dart (WinRT tarafi fringe, ham piksel tamponu almak dolayli), R (alan
+disi).
+
 - Sensor okuma platform basina tamamen farkli, eklenti katmani olarak ayrilacak.
 
 **2.2 Cekirdek mimari**

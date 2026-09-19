@@ -658,3 +658,103 @@ Arka isik GPIO 21'den dogrudan suruluyor ve ESP32-S3 pin basina 20-40 mA
 verebiliyor. Panel bundan fazlasini isterse pin yetismez. Daha parlak
 gerekirse cozum MOSFET ile 3V3'ten surmek; **gerilim yukseltmek degil**,
 modulun akim sinirlama direnci 3.3V icin secilmis ve 5V LED'leri yakar.
+
+---
+
+## Faz 2 hazirligi: PC tarafi kare maliyeti ve dil secimi
+
+Tarih: 2026-09-19
+Makine: AMD Zen 3, 16 mantiksal cekirdek, Windows 10
+
+Faz 2'nin cikis kriteri PC uygulamasindan bosta yuzde 1, calisirken yuzde 3
+CPU istiyor. Bu olcum o butcenin nereye harcandigini bulmak ve dil secimini
+tahmine degil sayiya baglamak icin yapildi.
+
+### Neden olculdu: Faz 1 bu yuku hic test etmedi
+
+`link_test.py` animasyon karelerini onceden kodluyor ve kosu sirasinda
+sadece hazir baytlari yaziyor. Yani Faz 1'de olculen 24.7 FPS **sifir
+kodlama maliyetiyle** alindi. Gercek uygulama her karede rasterleme, diff
+ve RLE kodlama yapacak. O yuk hic olculmemisti.
+
+### Yontem
+
+Kare basina boru hatti: RGBA8888 -> RGB565 donusumu, 16x16 karo diff,
+RLE16 kodlama. 320x240, 3000 kare, her dil 3 kez kosuldu.
+
+Gecerlilik sarti: dort uygulamanin da ayni isi yaptigi kanitlandi.
+Saglama toplami dordunde de 62619013 ve uretilen RLE ciktisi
+`tools/protocol.py` icindeki `rle16_encode` ile bayt bayt ayni, 12702 bayt.
+Eslesme olmasaydi olcum gecersiz sayilacakti.
+
+Icerik: sistem paneli benzeri sentetik kare. 12.1x sikisiyor, olculen
+gercek arayuz icerigi 21x sikisiyordu, yani test icerigi gercekten zor
+tarafta. Sayilar iyimser degil.
+
+### Sonuc: protokol asamalari
+
+| Uygulama | En kotu (tam kare) | 24 FPS'te cekirdek payi | Tipik (kirli) | Butceye marj |
+|---|---|---|---|---|
+| C++ `-O2 -march=native` | 0.057 ms | %0.14 | %0.06 | 21x |
+| Rust 1.98, release + LTO | 0.079 ms | %0.19 | %0.08 | 16x |
+| C++ `-O2` tasinabilir | 0.086 ms | %0.21 | %0.10 | 14x |
+| C# .NET 10 Release | 0.139 ms | %0.34 | %0.30 | 9x |
+| Python saf dongu | 8.10 ms (sadece RLE) | %19.4 | - | **gecmiyor** |
+
+Kosular arasi sapma binde birler seviyesinde.
+
+C# olcumunde GC gen0/gen1/gen2 sayaci **0/0/0** ve tahsis edilen bellek
+**0 bayt**. Tamponlar onceden ayrilinca sicak dongude GC hic devreye
+girmiyor.
+
+### Sonuc: rasterleme
+
+Rust, `tiny-skia` sekiller icin, `fontdue` glif rasterlemesi icin
+(onbellekli, 27 giris).
+
+| Asama | ms/kare | Pay |
+|---|---|---|
+| Arka plan dolgusu | 0.005 | %1 |
+| Baslik + metin | 0.004 | %1 |
+| 4 satir metin + cubuk | 0.011 | %2 |
+| Sparkline cizgi (stroke) | 0.372 | %58 |
+| Sparkline alan (fill) | 0.244 | %38 |
+| TOPLAM | 0.636 | |
+
+Kenar yumusatma kapatilinca toplam 0.636'dan 0.267 ms'e iniyor, yani AA
+tek basina 2.4 kat.
+
+**Tam boru hatti** (rasterleme + donusum + diff + tam kare RLE, 24 FPS'te
+her kare): 0.724 ms/kare, bir cekirdegin **yuzde 1.74'u**. Butcenin
+icinde ama marj 1.7x, protokol asamalarinin tek basina verdigi 16x degil.
+
+### Cikan dort sonuc
+
+**1. CPU maliyeti dil secimini belirlemiyor.** En yavas ciddi aday olan
+C# bile butcenin dokuzda birini kullaniyor. Derlenen ya da JIT'lenen
+hicbir dil bu kriterde elenmiyor.
+
+**2. Saf yorumlanan diller eleniyor.** Python tek basina RLE icin yuzde
+19.4, ustelik donusum ve diff haric. Tasinabilir C++'tan 94 kat yavas.
+
+**3. Butce rasterlemeye gidiyor, onun da yuzde 97'si tek bir seye:
+kenar yumusatmali vektor yolu.** Metin, dikdortgen ve cubuk toplamda
+yuzde 4, pratikte bedava. Bu maliyet dilden bagimsiz, ayni rasterleyiciyi
+kullanan her dil ayni parayi oder.
+
+**4. Hat, kodlayicidan 800 kat yavas.** Tam kare cikti 12742 bayt; bunu
+0.18 MB/s'lik hatta basmak 70.8 ms suruyor, kodlamasi 0.086 ms. Darbogaz
+sabit karar 5'te yazildigi yerde, USB'de. CPU tarafi gurultu seviyesinde.
+
+### Tasarim kurallari (dil bagimsiz)
+
+- Sayi, metin ve cubuk gosteren widget'lar bedava sayilir. Sistem paneli,
+  saat, medya metni: toplam 0.02 ms.
+- Pahali olan tek sey canli vektor grafigi. Sparkline yol yerine dikey
+  sutunlarla cizilirse maliyet sifira yakin iner.
+- Gerekmedikce kenar yumusatma acilmaz.
+
+### Olculmeyen
+
+Bellek ayak izi ve bosta davranis olculmedi. H maddesinin CPU tarafi
+kapandi, bellek tarafi Faz 2 icinde olculecek.
