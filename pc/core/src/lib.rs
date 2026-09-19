@@ -12,6 +12,7 @@ pub mod dirty;
 pub mod engine;
 pub mod protocol;
 pub mod render;
+pub mod sensors;
 pub mod transport;
 pub mod widget;
 pub mod widgets;

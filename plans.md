@@ -307,16 +307,24 @@ disi).
 - VID/PID ile otomatik bulma
 - Cikarma ve tekrar takmada kendiliginden toparlanma
 
-**2.4 Sistem sensorleri**
-- Anahtarsiz ve yetkisiz alinabilenler once: CPU kullanimi, RAM, disk, ag
-- NVIDIA GPU icin NVML, AMD icin ADLX (resmi SDK, surucu gerekmez)
-- CPU sicakligi: v1'de HWiNFO paylasimli bellegi opsiyonel kaynak. Yoksa o
-  alan gizlenir. Kendi imzali kernel surucusu bu fazin kapsaminda degil.
+**2.4 Sistem sensorleri** (kismen bitti)
+- Eklenti katmani kuruldu: `Source` ozelligi, `register_source!` ile
+  kendini kaydeden kaynaklar, butun olcumler `Option`. Widget bir degeri
+  okumak icin `Option`'i acmak zorunda, yani "yok" durumu atlanamiyor.
+- Bitti: CPU kullanimi, RAM, disk, ag. `sysinfo` uzerinden, uc platformda
+  ayni kod, yonetici hakki istemiyor.
+- **Kalan: GPU ve CPU sicakligi.** Gelistirme makinesinde NVIDIA yok
+  (NVML test edilemez), AMD ADLX C++ SDK'si indirilip baglanmadi, HWiNFO
+  kurulu degil. Ucu de yazilacak ama test edilemeyen kod yazilmadi.
 - Linux: /sys/class/hwmon ve /proc
 - macOS: temel metrikler, sicaklik kapsam disi
 
-**2.5 Sistem paneli widget'i**
-- Sayilar, kucuk grafikler, hizli guncelleme
+**2.5 Sistem paneli widget'i** (bitti)
+- Sayilar ve cubuklar. Olcume gore metin ve dikdortgen bedava (kare
+  basina 0.02 ms), pahali olan canli vektor grafigiydi, bu yuzden yol
+  cizimi yok.
+- Eksik olcum satiri hic cizilmiyor: "N/A" ya da 0 yazilmiyor, satirin
+  kendisi yok sayiliyor ve kalanlar yukari kayiyor.
 
 ### Cikis kriterleri
 
@@ -325,14 +333,23 @@ disi).
 - [ ] Cihaz takilinca otomatik bulunuyor, cikarilinca uygulama cokmuyor,
       tekrar takilinca kendiliginden baglaniyor. Bu dongu 20 kez arka arkaya
       sorunsuz.
-- [ ] Widget soyutlamasi kanitlanmis: ikinci bir sahte widget eklemek
-      cekirdekte tek satir degisiklik gerektirmiyor
-- [ ] Dirty tracking calisiyor: ekranda hicbir sey degismiyorken USB trafigi
-      sifira yakin. Olculmus deger belgelenmis.
-- [ ] Uygulama bosta CPU kullanimi yuzde 1'in altinda, calisirken yuzde 3'un
-      altinda
-- [ ] Eksik sensor kaynagi widget'i bozmuyor: GPU yoksa ya da HWiNFO kapaliysa
-      o alan temiz sekilde gizleniyor, hata gostermiyor
+- [x] Widget soyutlamasi kanitlanmis: ikinci bir sahte widget eklemek
+      cekirdekte tek satir degisiklik gerektirmiyor. Kanit: ucuncu bir
+      sahte widget eklendi, `git status` sadece tek yeni dosya gosterdi,
+      cekirdekte tek `M` satiri yok, widget kendiliginden listeye girdi.
+      `inventory` artı `widgets/` klasorunu tarayan build betigi.
+- [x] Dirty tracking calisiyor: ekranda hicbir sey degismiyorken USB trafigi
+      sifira yakin. Olculmus deger belgelenmis. 35 saniye durgun ekran,
+      1690 tur: **0 dikdortgen, 0 bayt/sn**. Canli ekranda 2513 bayt/sn,
+      dirty tracking olmasaydi 306 KB/sn olurdu, yaklasik 122 kat azalma.
+- [x] Uygulama bosta CPU kullanimi yuzde 1'in altinda, calisirken yuzde 3'un
+      altinda. Olculen, bir cekirdek uzerinden: bosta **%0.42**,
+      calisirken **%0.62**. Bellek 25.8 MB.
+- [x] Eksik sensor kaynagi widget'i bozmuyor: GPU yoksa ya da HWiNFO kapaliysa
+      o alan temiz sekilde gizleniyor, hata gostermiyor. Bu makinede GPU
+      kaynagi ve CPU sicakligi gercekten yok; panelde o satirlar hic
+      cizilmiyor, kalanlar yukari kayiyor. Varsayimla degil gercek
+      eksiklikle dogrulandi.
 - [ ] 24 saat kesintisiz calisma: bellek artisi yok, baglanti kopmasi yok
 - [ ] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
       kareyle kalmiyor

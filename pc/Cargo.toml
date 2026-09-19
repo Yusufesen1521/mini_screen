@@ -14,6 +14,7 @@ anyhow = "1"
 tiny-skia = "0.11"
 fontdue = "0.9"
 inventory = "0.3"
+sysinfo = "0.33"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [profile.release]

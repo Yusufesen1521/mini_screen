@@ -30,7 +30,8 @@ fn main() -> anyhow::Result<()> {
         "hello" => cmd_hello(port.as_deref()),
         "status" => cmd_status(port.as_deref()),
         "widgets" => cmd_widgets(),
-        "run" => cmd_run(port.as_deref(), seconds),
+        "sensors" => cmd_sensors(),
+        "run" => cmd_run(port.as_deref(), seconds, args.iter().any(|a| a == "--static")),
         _ => {
             print_help();
             Ok(())
@@ -51,9 +52,11 @@ fn print_help() {
     println!("  mscreen hello              el sikisir, cihaz yeteneklerini basar");
     println!("  mscreen status             cihaz sayaclarini okur");
     println!("  mscreen widgets            kayitli widget turlerini listeler");
+    println!("  mscreen sensors            sensor kaynaklarini yoklar ve okur");
     println!("  mscreen run                cizim dongusunu baslatir");
     println!("\n  --port <ad>                portu elle verir");
     println!("  --seconds <n>              run icin sure siniri, 0 = sinirsiz");
+    println!("  --static                   olcum kipi: ekrani dondurup trafigi olcer");
 }
 
 fn cmd_ports() -> anyhow::Result<()> {
@@ -79,6 +82,54 @@ fn cmd_widgets() -> anyhow::Result<()> {
         println!("{}", k);
     }
     Ok(())
+}
+
+fn cmd_sensors() -> anyhow::Result<()> {
+    use mini_screen_core::sensors::{Sensors, Snapshot};
+
+    let mut s = Sensors::probe_all();
+    println!("calisan kaynaklar : {:?}", s.active_names());
+    println!("bulunamayanlar    : {:?}", s.missing_names());
+
+    // Ag hizi iki ornek arasindaki farktan cikiyor, bir tur bekliyoruz.
+    s.poll();
+    std::thread::sleep(Duration::from_millis(1100));
+    s.poll();
+
+    let v = s.snapshot();
+    println!();
+    row("CPU", v.cpu_percent.map(|x| format!("{:.1}%", x)));
+    row("CPU sicaklik", v.cpu_temp_c.map(|x| format!("{:.1} C", x)));
+    row("cekirdek", v.cpu_cores.map(|x| x.to_string()));
+    row("RAM", pair(v.mem_used, v.mem_total));
+    row("RAM yuzde", v.mem_percent().map(|x| format!("{:.1}%", x)));
+    row("Disk", pair(v.disk_used, v.disk_total));
+    row("Ag rx", v.net_rx_bps.map(|x| format!("{} bayt/sn", x)));
+    row("Ag tx", v.net_tx_bps.map(|x| format!("{} bayt/sn", x)));
+    row("GPU", v.gpu_percent.map(|x| format!("{:.1}%", x)));
+    row("GPU sicaklik", v.gpu_temp_c.map(|x| format!("{:.1} C", x)));
+    row("VRAM", pair(v.gpu_mem_used, v.gpu_mem_total));
+    let _ = Snapshot::default();
+    Ok(())
+}
+
+/// Okunamayan degerler "yok" diye gosteriliyor, sifir ya da bos degil.
+fn row(label: &str, value: Option<String>) {
+    match value {
+        Some(v) => println!("  {:<14}: {}", label, v),
+        None => println!("  {:<14}: yok", label),
+    }
+}
+
+fn pair(used: Option<u64>, total: Option<u64>) -> Option<String> {
+    match (used, total) {
+        (Some(u), Some(t)) => Some(format!(
+            "{:.1} / {:.1} GiB",
+            u as f64 / 1073741824.0,
+            t as f64 / 1073741824.0
+        )),
+        _ => None,
+    }
 }
 
 fn cmd_hello(port: Option<&str>) -> anyhow::Result<()> {
@@ -110,8 +161,14 @@ fn cmd_status(port: Option<&str>) -> anyhow::Result<()> {
     match link.status(STATUS_TIMEOUT)? {
         Some(f) if f.payload.len() >= 14 => {
             let b = &f.payload;
-            println!("islenen   : {}", u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-            println!("dusen     : {}", u32::from_le_bytes([b[4], b[5], b[6], b[7]]));
+            println!(
+                "islenen   : {}",
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+            );
+            println!(
+                "dusen     : {}",
+                u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+            );
             println!("hdr CRC   : {}", u16::from_le_bytes([b[8], b[9]]));
             println!("payloadCRC: {}", u16::from_le_bytes([b[10], b[11]]));
             println!("senkron   : {}", u16::from_le_bytes([b[12], b[13]]));
@@ -122,7 +179,7 @@ fn cmd_status(port: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_run(port: Option<&str>, seconds: u64) -> anyhow::Result<()> {
+fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Result<()> {
     let mut link = Link::open_retry(port, OPEN_RETRY_TIMEOUT)?;
     let caps = link.handshake()?;
     let _ = link.take_logs();
@@ -138,12 +195,18 @@ fn cmd_run(port: Option<&str>, seconds: u64) -> anyhow::Result<()> {
         println!("UYARI: sistem fontu bulunamadi, metin cizilemeyecek.");
     }
     println!("Widget'lar: {:?}", widget::kinds());
+    println!(
+        "Sensor kaynaklari: calisan {:?}, bulunamayan {:?}",
+        engine.sensor_sources(),
+        engine.missing_sources()
+    );
     println!("Cikmak icin Ctrl+C.\n");
 
     let mut dirty: Vec<Rect> = Vec::new();
     let mut pixels: Vec<u16> = Vec::new();
 
     let start = Instant::now();
+    let mut frozen = false;
     let mut window_start = start;
     let mut window_bytes = 0u64;
     let mut window_rects = 0u64;
@@ -153,6 +216,23 @@ fn cmd_run(port: Option<&str>, seconds: u64) -> anyhow::Result<()> {
     loop {
         if seconds > 0 && start.elapsed() >= Duration::from_secs(seconds) {
             break;
+        }
+
+        // Gonderecek bir sey olmasa bile porttan okunmali, yoksa
+        // cihazin TX tamponu tasiyor. Gerekcesi Link::poll uzerinde.
+        link.poll()?;
+
+        // Olcum kipinde ilk kare gittikten sonra ekrani donduruyoruz.
+        if static_mode && !frozen && start.elapsed() >= Duration::from_secs(2) {
+            engine.set_frozen(true);
+            frozen = true;
+            link.drain(DRAIN_TIMEOUT)?;
+            window_start = Instant::now();
+            window_bytes = 0;
+            window_rects = 0;
+            window_ticks = 0;
+            idle_ticks = 0;
+            println!("--- ekran donduruldu, buradan sonrasi olcum ---");
         }
 
         engine.tick(&mut dirty);
@@ -195,10 +275,7 @@ fn cmd_run(port: Option<&str>, seconds: u64) -> anyhow::Result<()> {
     link.drain(DRAIN_TIMEOUT)?;
     println!(
         "\nToplam: {} cerceve, {} bayt, NACK {}, ACK zaman asimi {}",
-        link.stats.frames_sent,
-        link.stats.bytes_sent,
-        link.stats.nacks,
-        link.stats.ack_timeouts
+        link.stats.frames_sent, link.stats.bytes_sent, link.stats.nacks, link.stats.ack_timeouts
     );
     Ok(())
 }

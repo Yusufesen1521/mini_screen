@@ -17,6 +17,8 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 const ACK_TIMEOUT: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 4096;
+/// Onay beklerken bos dongu yapmamak icin kisa uyku.
+const POLL_IDLE_SLEEP: Duration = Duration::from_millis(1);
 /// Yeniden baglanma denemeleri arasindaki bekleme.
 const RECONNECT_POLL: Duration = Duration::from_millis(250);
 /// Acilista port bekleme suresi. Yeniden numaralandirma bunun altinda kaliyor.
@@ -276,8 +278,17 @@ impl Link {
     }
 
     /// Porttan okur, cerceveleri ayristirir, LOG olanlari ayiklar.
+    ///
+    /// Bloklamaz: once bekleyen bayt var mi diye bakar. Bloklayan okuma
+    /// her turda 200 ms yiyordu ve tur hizini saniyede 48'den 6'ya
+    /// dusuruyordu.
     fn pump(&mut self) -> Result<(), LinkError> {
-        let n = match self.port.read(&mut self.read_buf) {
+        let waiting = self.port.bytes_to_read().unwrap_or(0) as usize;
+        if waiting == 0 {
+            return Ok(());
+        }
+        let want = waiting.min(self.read_buf.len());
+        let n = match self.port.read(&mut self.read_buf[..want]) {
             Ok(n) => n,
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => 0,
             Err(e) => return Err(LinkError::Io(e)),
@@ -303,37 +314,58 @@ impl Link {
         Ok(())
     }
 
+    /// Gelen onaylari isler. En az biri islendiyse true doner.
+    fn process_inbox(&mut self) -> bool {
+        let mut progressed = false;
+        let mut i = 0;
+        while i < self.inbox.len() {
+            match self.inbox[i].msg_type {
+                p::MSG_ACK => {
+                    let seq = self.inbox[i].seq;
+                    self.retire(seq);
+                    self.inbox.remove(i);
+                    progressed = true;
+                }
+                p::MSG_NACK => {
+                    self.stats.nacks += 1;
+                    // NACK payload'inda ikinci bayt reddedilen seq.
+                    if self.inbox[i].payload.len() >= 2 {
+                        let seq = self.inbox[i].payload[1];
+                        self.retire(seq);
+                    }
+                    self.inbox.remove(i);
+                    progressed = true;
+                }
+                _ => i += 1,
+            }
+        }
+        progressed
+    }
+
+    /// Bloklamadan porttan okur ve gelen onaylari isler.
+    ///
+    /// **Her turda cagrilmali, gonderilecek bir sey olmasa bile.**
+    /// Gerekcesi olculdu: cihazin CDC TX tamponu 4096 bayt ve ACK ile
+    /// LOG cerceveleri orada birikiyor. Dirty tracking sayesinde
+    /// turlarin yuzde 96'si bos geciyor; sadece gonderirken okursak
+    /// tampon tasiyor ve ACK'ler sessizce dusuyor. 20 saniyeden uzun
+    /// kosularda kosu basina bir ACK zaman asimi bu yuzden olusuyordu.
+    pub fn poll(&mut self) -> Result<(), LinkError> {
+        self.pump()?;
+        self.process_inbox();
+        Ok(())
+    }
+
     /// Onaylari toplar. En az bir ACK ya da NACK gelirse true doner.
     fn reap(&mut self, timeout: Duration) -> Result<bool, LinkError> {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             self.pump()?;
-            let mut progressed = false;
-            let mut i = 0;
-            while i < self.inbox.len() {
-                match self.inbox[i].msg_type {
-                    p::MSG_ACK => {
-                        let seq = self.inbox[i].seq;
-                        self.retire(seq);
-                        self.inbox.remove(i);
-                        progressed = true;
-                    }
-                    p::MSG_NACK => {
-                        self.stats.nacks += 1;
-                        // NACK payload'inda ikinci bayt reddedilen seq.
-                        if self.inbox[i].payload.len() >= 2 {
-                            let seq = self.inbox[i].payload[1];
-                            self.retire(seq);
-                        }
-                        self.inbox.remove(i);
-                        progressed = true;
-                    }
-                    _ => i += 1,
-                }
-            }
-            if progressed {
+            if self.process_inbox() {
                 return Ok(true);
             }
+            // pump bloklamiyor, bosa donmeyelim.
+            std::thread::sleep(POLL_IDLE_SLEEP);
         }
         Ok(false)
     }

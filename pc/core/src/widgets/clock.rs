@@ -39,7 +39,7 @@ impl Widget for Clock {
         Duration::from_millis(200)
     }
 
-    fn update(&mut self, ctx: &Context) -> bool {
+    fn update(&mut self, ctx: &Context<'_>) -> bool {
         // Saniye degismediyse cizmeye gerek yok. Rasterleme maliyetini
         // burada kesmek dirty tracking'den once geliyor.
         if ctx.local_hms == self.hms && ctx.local_ymd == self.ymd {
@@ -50,7 +50,7 @@ impl Widget for Clock {
         true
     }
 
-    fn render(&mut self, canvas: &mut Canvas, area: Rect, _ctx: &Context) {
+    fn render(&mut self, canvas: &mut Canvas, area: Rect, _ctx: &Context<'_>) {
         canvas.fill_rect(area, COLOR_BG);
 
         let (h, m, s) = self.hms;

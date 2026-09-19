@@ -9,4 +9,5 @@ serialport.workspace = true
 tiny-skia.workspace = true
 fontdue.workspace = true
 inventory.workspace = true
+sysinfo.workspace = true
 chrono.workspace = true

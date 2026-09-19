@@ -758,3 +758,91 @@ sabit karar 5'te yazildigi yerde, USB'de. CPU tarafi gurultu seviyesinde.
 
 Bellek ayak izi ve bosta davranis olculmedi. H maddesinin CPU tarafi
 kapandi, bellek tarafi Faz 2 icinde olculecek.
+
+---
+
+## Faz 2.4 ve 2.5: sensorler, sistem paneli, dirty tracking olcumu
+
+Tarih: 2026-09-19
+Makine: AMD Zen 3, 16 mantiksal cekirdek, Windows 10, Radeon RX 5500 XT
+
+### Bu makinede hangi sensorler var
+
+| Olcum | Durum |
+|---|---|
+| CPU kullanimi | var, 16 cekirdek |
+| RAM | var, 10.0 / 15.8 GiB |
+| Disk | var, 909 / 2328 GiB |
+| Ag rx/tx | var |
+| CPU sicakligi | **yok** (Windows'ta sysinfo vermiyor, HWiNFO kaynagi henuz yazilmadi) |
+| GPU yuku, sicaklik, VRAM | **yok** (NVIDIA yok, ADLX kaynagi henuz yazilmadi) |
+
+Eksik olanlar bu fazda isimize yaradi: "eksik sensor kaynagi widget'i
+bozmuyor" kriterini varsayimla degil gercek bir eksiklikle dogruladik.
+Panelde CPU sicakligi ve GPU satirlari **hic cizilmiyor**, kalan satirlar
+yukari kayiyor. Ekranda ne hata ne bos deger var.
+
+### Dirty tracking: durgun ekranda trafik
+
+Olcum kipi (`mscreen run --static`) ilk kareden iki saniye sonra
+widget'lari dondurup rasterleme ve diff'i calistirmaya devam ediyor.
+Yani ekran gercekten durgun ama boru hatti her turda isliyor.
+
+35 saniye, yaklasik 1690 tur:
+
+| | |
+|---|---|
+| Uretilen kirli dikdortgen | **0** |
+| Gonderilen bayt | **0 bayt/sn** |
+| Bos gecen tur orani | **%100** |
+
+Kriter "sifira yakin" diyordu, olculen **tam sifir**.
+
+### Canli ekranda trafik
+
+Saat saniyede bir, sistem paneli yarim saniyede bir tazeleniyor.
+60 saniyelik kosu:
+
+| | |
+|---|---|
+| Gonderilen cerceve | 447 |
+| Toplam | 150776 bayt |
+| Ortalama | **2513 bayt/sn** |
+| Bos gecen tur orani | **%96** |
+| NACK / ACK zaman asimi | 0 / 0 |
+
+Karsilastirma: dirty tracking olmasa her tur tam kare gonderilirdi.
+Tam kare ciktisi yaklasik 12742 bayt; 24 FPS'te 306 KB/sn eder. Olculen
+2.5 KB/sn, yani **yaklasik 122 kat azalma.**
+
+### CPU ve bellek
+
+`mscreen run`, 30 saniyelik ornekleme:
+
+| Durum | Bir cekirdegin | Toplam CPU'nun | Bellek (RSS) |
+|---|---|---|---|
+| Calisirken (canli ekran) | **%0.62** | %0.039 | 25.8 MB |
+| Bosta (durgun ekran) | **%0.42** | %0.026 | 25.6 MB |
+
+Kriter bosta yuzde 1, calisirken yuzde 3 istiyordu. Bir cekirdek
+uzerinden okunsa bile ikisi de saglaniyor.
+
+### Bulunan hata: ACK'ler sessizce dusuyordu
+
+20 saniyeden uzun her kosuda kosu basina tam bir ACK zaman asimi
+gorunuyordu, kisa kosularda gorunmuyordu.
+
+**Sebep:** porttan sadece gonderim penceresi dolunca okuyorduk. Dirty
+tracking sayesinde turlarin yuzde 96'si bos geciyor ve o turlarda porta
+hic bakilmiyordu. Cihazin CDC TX tamponu 4096 bayt; ACK ve LOG
+cerceveleri orada birikip tasiyordu.
+
+**Cozum:** `Link::poll` her turda cagriliyor, gonderilecek bir sey olmasa
+bile. 60 saniyelik kosuda ACK zaman asimi 0.
+
+Ilk duzeltme yeni bir sorun yaratti: okuma bloklayiciydi ve her tur 200 ms
+yiyordu, tur hizi saniyede 48'den 6'ya dustu. Okuma `bytes_to_read` ile
+bloklamayan hale getirildi, tur hizi geri geldi.
+
+**Ders:** dirty tracking gonderimi seyrektiyorsa okuma da seyreklesmemeli.
+Iki yon ayri dusunulmeli.

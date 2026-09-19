@@ -74,8 +74,7 @@ impl TextRenderer {
     fn load() -> Option<TextRenderer> {
         for path in FONT_CANDIDATES {
             if let Ok(bytes) = std::fs::read(path) {
-                if let Ok(font) =
-                    fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
+                if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
                 {
                     return Some(TextRenderer {
                         font,
@@ -98,8 +97,7 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn new(width: u16, height: u16) -> Canvas {
-        let pm = Pixmap::new(width as u32, height as u32)
-            .expect("gecersiz tuval olcusu");
+        let pm = Pixmap::new(width as u32, height as u32).expect("gecersiz tuval olcusu");
         Canvas {
             pm,
             text: TextRenderer::load(),
@@ -130,16 +128,15 @@ impl Canvas {
         if r.w == 0 || r.h == 0 {
             return;
         }
-        let Some(rect) =
-            SkRect::from_xywh(r.x as f32, r.y as f32, r.w as f32, r.h as f32)
-        else {
+        let Some(rect) = SkRect::from_xywh(r.x as f32, r.y as f32, r.w as f32, r.h as f32) else {
             return;
         };
-        let mut paint = Paint::default();
+        let mut paint = Paint {
+            anti_alias: false,
+            ..Default::default()
+        };
         paint.set_color(c.to_sk());
-        paint.anti_alias = false;
-        self.pm
-            .fill_rect(rect, &paint, Transform::identity(), None);
+        self.pm.fill_rect(rect, &paint, Transform::identity(), None);
     }
 
     /// Cizgi. Kenar yumusatma kapali, gerekcesi modul basinda.
@@ -148,11 +145,15 @@ impl Canvas {
         pb.move_to(x0 as f32, y0 as f32);
         pb.line_to(x1 as f32, y1 as f32);
         let Some(path) = pb.finish() else { return };
-        let mut paint = Paint::default();
+        let mut paint = Paint {
+            anti_alias: false,
+            ..Default::default()
+        };
         paint.set_color(c.to_sk());
-        paint.anti_alias = false;
-        let mut stroke = Stroke::default();
-        stroke.width = width;
+        let stroke = Stroke {
+            width,
+            ..Default::default()
+        };
         self.pm
             .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
@@ -173,13 +174,12 @@ impl Canvas {
                 .entry((ch, key_size))
                 .or_insert_with(|| tr.font.rasterize(ch, size));
             for gy in 0..m.height {
-                let py = y as i32 + gy as i32 - m.height as i32 - m.ymin as i32
-                    + size as i32;
+                let py = y as i32 + gy as i32 - m.height as i32 - m.ymin + size as i32;
                 if py < 0 || py >= self.height as i32 {
                     continue;
                 }
                 for gx in 0..m.width {
-                    let px = pen + gx as i32 + m.xmin as i32;
+                    let px = pen + gx as i32 + m.xmin;
                     if px < 0 || px >= self.width as i32 {
                         continue;
                     }
@@ -243,7 +243,11 @@ mod tests {
         let mut buf = vec![0u16; 8 * 4];
         c.to_rgb565(&mut buf);
         // Saf kirmizi RGB565'te 0xF800.
-        assert!(buf.iter().all(|&p| p == 0xF800), "ilk piksel 0x{:04X}", buf[0]);
+        assert!(
+            buf.iter().all(|&p| p == 0xF800),
+            "ilk piksel 0x{:04X}",
+            buf[0]
+        );
     }
 
     #[test]
@@ -253,9 +257,9 @@ mod tests {
         c.fill_rect(Rect::new(2, 1, 3, 2), Color::rgb(0, 0, 255));
         let mut buf = vec![0u16; 8 * 4];
         c.to_rgb565(&mut buf);
-        assert_eq!(buf[1 * 8 + 2], 0x001F, "mavi olmali");
+        assert_eq!(buf[8 + 2], 0x001F, "mavi olmali");
         assert_eq!(buf[0], 0x0000, "disarisi siyah kalmali");
-        assert_eq!(buf[1 * 8 + 5], 0x0000, "sag komsu siyah kalmali");
+        assert_eq!(buf[8 + 5], 0x0000, "sag komsu siyah kalmali");
     }
 
     #[test]

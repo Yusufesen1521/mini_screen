@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::dirty::DirtyTracker;
 use crate::render::{Canvas, Rect};
+use crate::sensors::{Sensors, Snapshot};
 use crate::widget::{self, Context, Widget};
 
 /// Yerlesimdeki bir kutu: hangi widget, nereye.
@@ -20,7 +21,10 @@ pub struct Slot {
 
 impl Slot {
     pub fn new(kind: &str, area: Rect) -> Slot {
-        Slot { kind: kind.to_string(), area }
+        Slot {
+            kind: kind.to_string(),
+            area,
+        }
     }
 }
 
@@ -40,7 +44,12 @@ impl std::fmt::Display for LayoutError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LayoutError::UnknownKind(k) => {
-                write!(f, "bilinmeyen widget turu: {}. Kayitli olanlar: {:?}", k, widget::kinds())
+                write!(
+                    f,
+                    "bilinmeyen widget turu: {}. Kayitli olanlar: {:?}",
+                    k,
+                    widget::kinds()
+                )
             }
             LayoutError::OutOfBounds(s) => {
                 write!(f, "{} ekran disina tasiyor: {:?}", s.kind, s.area)
@@ -66,6 +75,11 @@ pub struct Engine {
     tracker: DirtyTracker,
     mounted: Vec<Mounted>,
     frame: Vec<u16>,
+    sensors: Sensors,
+    /// Olcum kipi: widget'lar tazelenmez ama rasterleme ve diff her
+    /// turda calisir. "Ekranda hicbir sey degismiyorken trafik" cikis
+    /// kriterini gercekten durgun bir ekranla olcmek icin.
+    frozen: bool,
     started: Instant,
     width: u16,
     height: u16,
@@ -78,9 +92,13 @@ impl Engine {
         let now = Instant::now();
         let mut mounted = Vec::with_capacity(layout.len());
         for s in layout {
-            let w = widget::make(&s.kind)
-                .ok_or_else(|| LayoutError::UnknownKind(s.kind.clone()))?;
-            mounted.push(Mounted { widget: w, area: s.area, next_tick: now });
+            let w =
+                widget::make(&s.kind).ok_or_else(|| LayoutError::UnknownKind(s.kind.clone()))?;
+            mounted.push(Mounted {
+                widget: w,
+                area: s.area,
+                next_tick: now,
+            });
         }
 
         Ok(Engine {
@@ -88,6 +106,8 @@ impl Engine {
             tracker: DirtyTracker::new(width, height),
             mounted,
             frame: vec![0u16; width as usize * height as usize],
+            sensors: Sensors::probe_all(),
+            frozen: false,
             started: now,
             width,
             height,
@@ -112,29 +132,43 @@ impl Engine {
         self.tracker.force_full();
     }
 
+    /// Olcum kipi. Acikken widget'lar tazelenmez, yani ekran gercekten
+    /// durgun kalir; rasterleme ve diff calismaya devam eder.
+    pub fn set_frozen(&mut self, frozen: bool) {
+        self.frozen = frozen;
+    }
+
     /// Bir tur. Zamani gelen widget'lari tazeler, degisenleri cizer,
     /// kirli dikdortgenleri `out` icine yazar.
     ///
     /// Hicbir sey degismediyse `out` bos kalir ve cihaza tek bayt
     /// gitmez. Faz 2'nin dirty tracking kriteri tam olarak bu.
     pub fn tick(&mut self, out: &mut Vec<Rect>) {
+        self.sensors.poll();
         let now = Instant::now();
-        let ctx = self.context(now);
+        // Goruntu kopyalaniyor: ctx yasarken canvas'i mut odunc almak
+        // gerekiyor ve Snapshot zaten kucuk bir Copy yapisi.
+        let snap = *self.sensors.snapshot();
+        let ctx = self.context_with(now, &snap);
 
         let mut drew = false;
-        for m in self.mounted.iter_mut() {
-            if now < m.next_tick {
-                continue;
-            }
-            m.next_tick = now + m.widget.interval();
-            if m.widget.update(&ctx) {
-                m.widget.render(&mut self.canvas, m.area, &ctx);
-                drew = true;
+        if !self.frozen {
+            for m in self.mounted.iter_mut() {
+                if now < m.next_tick {
+                    continue;
+                }
+                m.next_tick = now + m.widget.interval();
+                if m.widget.update(&ctx) {
+                    m.widget.render(&mut self.canvas, m.area, &ctx);
+                    drew = true;
+                }
             }
         }
 
         out.clear();
-        if !drew && !self.tracker_needs_full() {
+        // Olcum kipinde erken cikmiyoruz: diff yolunun gercekten sifir
+        // dikdortgen urettigini gormek istiyoruz.
+        if !drew && !self.frozen && !self.tracker_needs_full() {
             return;
         }
         self.canvas.to_rgb565(&mut self.frame);
@@ -147,14 +181,29 @@ impl Engine {
         self.started.elapsed() < Duration::from_millis(1)
     }
 
-    fn context(&self, now: Instant) -> Context {
+    fn context_with<'a>(&self, now: Instant, snap: &'a Snapshot) -> Context<'a> {
         use chrono::{Datelike, Local, Timelike};
         let t = Local::now();
         Context {
             uptime: now.duration_since(self.started),
             local_hms: (t.hour() as u8, t.minute() as u8, t.second() as u8),
             local_ymd: (t.year(), t.month() as u8, t.day() as u8),
+            sensors: snap,
         }
+    }
+
+    /// Bu makinede calisan sensor kaynaklari.
+    pub fn sensor_sources(&self) -> Vec<&'static str> {
+        self.sensors.active_names()
+    }
+
+    /// Yoklanip bulunamayan kaynaklar. Hata degil, bilgi.
+    pub fn missing_sources(&self) -> &[&'static str] {
+        self.sensors.missing_names()
+    }
+
+    pub fn sensors(&self) -> &Snapshot {
+        self.sensors.snapshot()
     }
 
     /// Son uretilen kare, RGB565. Onizleme de bunu gosterecek.
@@ -196,6 +245,15 @@ fn overlaps(a: Rect, b: Rect) -> bool {
 /// Faz 2'nin varsayilan yerlesimi: ustte saat, altta calisma suresi.
 /// Gercek yerlesim motoru Faz 4'un isi, bu sadece bir baslangic.
 pub fn default_layout(width: u16, height: u16) -> Vec<Slot> {
+    let clock_h = height / 3;
+    vec![
+        Slot::new("clock", Rect::new(0, 0, width, clock_h)),
+        Slot::new("sysinfo", Rect::new(0, clock_h, width, height - clock_h)),
+    ]
+}
+
+/// Sadece saat ve calisma suresi. Sensorsuz makinede ve testte kullanilir.
+pub fn clock_layout(width: u16, height: u16) -> Vec<Slot> {
     let top_h = height * 2 / 3;
     vec![
         Slot::new("clock", Rect::new(0, 0, width, top_h)),
@@ -225,7 +283,10 @@ mod tests {
     #[test]
     fn sifir_olculu_kutu_reddediliyor() {
         let l = vec![Slot::new("clock", Rect::new(0, 0, 0, 100))];
-        assert!(matches!(Engine::new(320, 240, &l), Err(LayoutError::ZeroSize(_))));
+        assert!(matches!(
+            Engine::new(320, 240, &l),
+            Err(LayoutError::ZeroSize(_))
+        ));
     }
 
     #[test]
@@ -234,7 +295,10 @@ mod tests {
             Slot::new("clock", Rect::new(0, 0, 200, 100)),
             Slot::new("uptime", Rect::new(100, 50, 200, 100)),
         ];
-        assert!(matches!(Engine::new(320, 240, &l), Err(LayoutError::Overlap(_, _))));
+        assert!(matches!(
+            Engine::new(320, 240, &l),
+            Err(LayoutError::Overlap(_, _))
+        ));
     }
 
     #[test]
@@ -265,6 +329,9 @@ mod tests {
                 bos_turlar += 1;
             }
         }
-        assert!(bos_turlar > 0, "hicbir tur bos gecmedi, dirty tracking calismiyor");
+        assert!(
+            bos_turlar > 0,
+            "hicbir tur bos gecmedi, dirty tracking calismiyor"
+        );
     }
 }

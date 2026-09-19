@@ -13,19 +13,22 @@
 use std::time::Duration;
 
 use crate::render::{Canvas, Rect};
+use crate::sensors::Snapshot;
 
 /// Widget'a her tik'te verilen disaridan gelen baglam.
 ///
-/// Sensor degerleri buraya eklenecek (2.4). Simdilik sadece zaman var;
-/// widget'lar dogrudan saate bakmasin diye burada tutuluyor, boylece
-/// onizleme ve test sabit bir zamanla surulebiliyor.
+/// Widget'lar ne saate ne sensorlere dogrudan bakar, hepsi buradan
+/// gelir. Boylece onizleme ve test sabit bir baglamla surulebiliyor.
 #[derive(Debug, Clone, Copy)]
-pub struct Context {
+pub struct Context<'a> {
     /// Uygulamanin basindan beri gecen sure.
     pub uptime: Duration,
     /// Yerel duvar saati, saniye hassasiyetinde bilesenler.
     pub local_hms: (u8, u8, u8),
     pub local_ymd: (i32, u8, u8),
+    /// Sensor okumalari. Her alan `Option`, `None` "bu makinede yok"
+    /// demek. Gerekcesi `crate::sensors` modulunun basinda.
+    pub sensors: &'a Snapshot,
 }
 
 pub trait Widget: Send {
@@ -40,10 +43,10 @@ pub trait Widget: Send {
     /// `false` donmek motorun yeniden cizmesini engeller; dirty tracking
     /// zaten piksel seviyesinde koruyor ama burada erken cikmak
     /// rasterleme maliyetini de kaldiriyor.
-    fn update(&mut self, ctx: &Context) -> bool;
+    fn update(&mut self, ctx: &Context<'_>) -> bool;
 
     /// Kendini `area` icine cizer. Disina tasmamali.
-    fn render(&mut self, canvas: &mut Canvas, area: Rect, ctx: &Context);
+    fn render(&mut self, canvas: &mut Canvas, area: Rect, ctx: &Context<'_>);
 }
 
 /// Kayit girisi. `register_widget!` bunu uretir.

@@ -248,7 +248,10 @@ mod tests {
         }
         let mut dst = Vec::new();
         DirtyTracker::copy_region(&src, W, Rect::new(2, 1, 3, 2), &mut dst);
-        assert_eq!(dst, vec![W + 2, W + 3, W + 4, 2 * W + 2, 2 * W + 3, 2 * W + 4]);
+        assert_eq!(
+            dst,
+            vec![W + 2, W + 3, W + 4, 2 * W + 2, 2 * W + 3, 2 * W + 4]
+        );
     }
 
     /// Ekran olcusu karoya tam bolunmuyorsa kenar karolar tasmamali.

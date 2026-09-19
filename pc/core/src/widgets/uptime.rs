@@ -37,7 +37,7 @@ impl Widget for Uptime {
         Duration::from_millis(200)
     }
 
-    fn update(&mut self, ctx: &Context) -> bool {
+    fn update(&mut self, ctx: &Context<'_>) -> bool {
         let s = ctx.uptime.as_secs();
         if s == self.secs {
             return false;
@@ -46,7 +46,7 @@ impl Widget for Uptime {
         true
     }
 
-    fn render(&mut self, canvas: &mut Canvas, area: Rect, _ctx: &Context) {
+    fn render(&mut self, canvas: &mut Canvas, area: Rect, _ctx: &Context<'_>) {
         canvas.fill_rect(area, COLOR_BG);
 
         canvas.text(
