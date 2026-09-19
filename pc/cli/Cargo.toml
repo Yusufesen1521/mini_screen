@@ -1,0 +1,13 @@
+[package]
+name = "mini-screen-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "mscreen"
+path = "src/main.rs"
+
+[dependencies]
+mini-screen-core.workspace = true
+anyhow.workspace = true

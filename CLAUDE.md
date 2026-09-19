@@ -4,7 +4,8 @@ Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
 
 **Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
 Su anki asama: Faz 0 ve Faz 1 bitti, butun cikis kriterleri
-dogrulandi. Sirada Faz 2, masaustu uygulamasi.
+dogrulandi. Faz 2 basladi. Dil secimi Rust, gerekcesi olculdu ve
+`plans.md` 2.1 icinde. PC kodu `pc/` altinda, ayrintisi `pc/README.md`.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek
@@ -134,6 +135,8 @@ eklerken `Serial.printf` degil `logPrintf` kullan.
 ## Komutlar
 
 ```bash
+cd pc && build.bat build --release         # PC uygulamasi (Rust)
+cd pc && build.bat test                    # PC testleri
 pio run                                    # protokol firmware
 pio run -e gifplay -t upload               # GIF oynatici
 python tools/prepare_gif.py                # gif/ -> data/, ekran olcusune

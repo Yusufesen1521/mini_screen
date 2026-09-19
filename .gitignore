@@ -24,3 +24,6 @@ __pycache__/
 # Isletim sistemi
 .DS_Store
 Thumbs.db
+
+# Rust, PC uygulamasi
+pc/target/
