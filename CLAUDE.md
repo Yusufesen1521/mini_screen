@@ -154,6 +154,22 @@ Cokme ayiklama: seri porttan backtrace adreslerini al, sonra
 ~/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-addr2line -pfiaC -e .pio/build/esp32-s3-devkitc-1/firmware.elf <adres>
 ```
 
+## Kritik: Rust derlemesi ve VS 18
+
+Makinede iki Visual Studio kurulu. rustup varsayilan olarak VS 18'i
+seciyor ama o kurulumda `msvcrt.lib` yok, bu yuzden baglama
+`LINK : fatal error LNK1104: 'msvcrt.lib' dosyasi acilamiyor` ile
+dusuyor. VS 2022 kurulumunda kutuphane yerinde.
+
+Gecici cozum `pc/build.bat`: once VS 2022 ortamini yukluyor, sonra
+cargo'yu cagiriyor. Rust tarafinda duz `cargo` yerine bu betik
+kullanilir.
+
+**PC tarafinda acikli bir derleme ya da baglama hatasi gorursen ilk
+supheli bu.** Once hatanin VS 18 kaynakli olup olmadigina bak, kodda
+hata arama. Kullanici VS 18'i kaldirmayi planliyor; kaldirildiginda
+`build.bat` gereksiz kalir ve duz `cargo build` calisir.
+
 ## Kod kurallari
 
 - Sihirli sayi yok. Her pin, zamanlama, yerlesim ve renk sabiti
