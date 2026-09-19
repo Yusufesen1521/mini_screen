@@ -358,7 +358,13 @@ disi).
       kaynagi ve CPU sicakligi gercekten yok; panelde o satirlar hic
       cizilmiyor, kalanlar yukari kayiyor. Varsayimla degil gercek
       eksiklikle dogrulandi.
-- [ ] 24 saat kesintisiz calisma: bellek artisi yok, baglanti kopmasi yok
+- [ ] 24 saat kesintisiz calisma: bellek artisi yok, baglanti kopmasi yok.
+      **106 dakikalik ara dogrulama yapildi** ve temiz cikti: bellek
+      45.4 -> 45.5 MB, bos tur orani ilk ve son ceyrekte ayni (%95.8),
+      NACK 0, cihaz sayaclari 0/0/0/0. Tam sureli kosu kullanicinin
+      istegiyle ertelendi. **Kapatmadan once cozulmesi gereken:**
+      yaklasik 26 dakikada bir, trafikten bagimsiz olarak tek bir ACK
+      dusuyor (106 dakikada 4 kez). Ayrintisi `docs/measurements.md`.
 - [ ] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
       kareyle kalmiyor
 

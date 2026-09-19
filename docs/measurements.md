@@ -918,3 +918,82 @@ Rasterleme maliyetini widget'in yeniden cizim sikligiyla birlikte
 dusun. "Kenar yumusatma pahali" tek basina bir yasak degil; saniyede
 iki kez cizilen bir seyde bedava sayilir, her karede cizilen bir seyde
 butceyi yer.
+
+---
+
+## Faz 2: 106 dakikalik kesintisiz kosu
+
+Tarih: 2026-09-19
+
+Cikis kriteri 24 saat istiyor. Kullanici o kadar uzun beklemek
+istemedi, ara dogrulama olarak 3 saat planlandi ve 106 dakikada
+yeterli veri toplanip durduruldu. **24 saatlik kosu hala acik bir is.**
+
+Yerlesim: saat basligi ve halka gosterge paneli. Sensor kaynaklari
+`system` ve `afterburner`.
+
+### Sonuc
+
+| | |
+|---|---|
+| Sure | 106.2 dk (6371 sn), 1271 olcum penceresi |
+| Toplam tur | 299 789 |
+| Bos gecen tur | 287 304 (**%95.8**) |
+| Gonderilen bolge | 49 875 |
+| Trafik | ortalama **2706 bayt/sn**, toplam 17.2 MB |
+| NACK | **0** |
+| ACK zaman asimi | **4** |
+| Cihaz: dusen / hdrCRC / payloadCRC / senkron | **0 / 0 / 0 / 0** |
+| Bellek (RSS) | 45.4 -> **45.5 MB** |
+| CPU ortalama | **%0.54** (bir cekirdegin) |
+| Tutamak / is parcacigi | 303 / 4 |
+
+### Suruklenme yok
+
+Ilk ceyrek ile son ceyrek karsilastirmasi:
+
+| | Ilk ceyrek | Son ceyrek |
+|---|---|---|
+| Bos tur orani | %95.8 | %95.8 |
+| Tur / pencere | 235.1 | 234.9 |
+| Trafik | 2956 bayt/sn | 2650 bayt/sn |
+
+Bellek 106 dakikada 0.1 MB artti, yani olcum gurultusu icinde.
+Glif onbelleginin doyup durdugu dogrulandi. Tutamak ve is parcacigi
+sayisi sabit.
+
+### Acik kalan: duzenli araliklarla bir ACK dusuyor
+
+Dort ACK zaman asimi olustu ve zamanlari carpici sekilde duzenli:
+
+| Olustugu an | Aradaki sure |
+|---|---|
+| 22.7 dk | - |
+| 48.0 dk | 25.3 dk |
+| 74.4 dk | 26.4 dk |
+| 103.8 dk | 29.4 dk |
+
+**Trafikle ilgisi yok.** Olustuklari pencereler ortalama yukluydu
+(1676-2460 bayt/sn); en yuksek trafikli pencerelerde (5942 bayt/sn) hic
+olusmadi.
+
+Bu duzenlilik rastgele kayip olmadigini soyluyor, sistematik bir sey
+var. Onceki ACK kaybi sorunu (porttan sadece gonderirken okumak)
+duzeltildi ve o duzeltme calisiyor; bu kalan olay farkli bir sey.
+Henuz sebebi bulunmadi.
+
+Siddeti dusuk: NACK yok, cihaz sayaclari tertemiz, ekranda gorunur bir
+etki yok. Ama 24 saatlik kriterde yaklasik 55 kez olusur, o yuzden
+kriter kapatilmadan once sebebi bulunmali.
+
+Arastirilacak yonler: Windows USB secici askiya alma (selective
+suspend), cihaz tarafinda periyodik bir is, ya da yaklasik 26 dakikada
+bir dolan bir tampon durumu.
+
+### Not
+
+Cihaz sayaci 58 022 gosteriyor ama bu kosuda 49 875 bolge gonderildi.
+Fark, cihazin bu kosu icin yeniden baslamamis olmasindan geliyor:
+kosunun log'unda acilis banner'i yok, yani sayac bugunun butun
+oturumlarinin toplami. Faz 1'de ogrenilen "PC ile cihazin saydigini
+karsilastir" kurali geregi kovalandi ve acikligi giderildi.
