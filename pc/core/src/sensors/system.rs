@@ -81,7 +81,15 @@ impl Source for SystemSource {
         out.cpu_cores = Some(self.sys.cpus().len()).filter(|n| *n > 0);
         out.mem_used = Some(self.sys.used_memory());
         out.mem_total = Some(self.sys.total_memory());
-        out.cpu_temp_c = self.cpu_temperature();
+        // **Okuyamadigimiz degeri silmiyoruz.** Snapshot kaynaklar
+        // arasinda ortak ve birikimli; duz atama yapinca bu satir
+        // Windows'ta Afterburner'in okudugu CPU sicakligini her turda
+        // None ile eziyordu. Olculdu: Afterburner "CPU temperature"
+        // 63.6 C verirken panelde o satir hic cizilmiyordu.
+        // sysinfo Windows'ta CPU sicakligi vermiyor, Linux'ta veriyor.
+        if let Some(t) = self.cpu_temperature() {
+            out.cpu_temp_c = Some(t);
+        }
 
         // Disk: butun diskler toplanir. Tek bir surucu secmek Faz 4'te
         // ayar olacak, simdilik toplam daha durust bir varsayilan.
@@ -140,6 +148,28 @@ mod tests {
             (0.0..=100.0).contains(&cpu),
             "cpu yuzdesi araligin disinda: {}",
             cpu
+        );
+    }
+
+    /// Baska bir kaynagin okudugu deger bu kaynak tarafindan silinmemeli.
+    ///
+    /// Gercek bir hataydi: Snapshot kaynaklar arasinda ortak ve
+    /// birikimli, bu kaynak ise CPU sicakligini duz atama ile
+    /// yaziyordu. Windows'ta sysinfo sicaklik vermedigi icin her turda
+    /// Afterburner'in okudugu deger None ile eziliyordu ve panelde o
+    /// satir hic cizilmiyordu.
+    #[test]
+    fn baska_kaynagin_sicakligi_silinmiyor() {
+        let mut src = SystemSource::probe().unwrap();
+        // Afterburner'in yazmis olabilecegi bir deger.
+        let mut s = Snapshot {
+            cpu_temp_c: Some(63.6),
+            ..Snapshot::default()
+        };
+        src.sample(&mut s);
+        assert!(
+            s.cpu_temp_c.is_some(),
+            "baska kaynagin okudugu CPU sicakligi silindi"
         );
     }
 

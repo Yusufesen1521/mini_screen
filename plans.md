@@ -313,9 +313,18 @@ disi).
   okumak icin `Option`'i acmak zorunda, yani "yok" durumu atlanamiyor.
 - Bitti: CPU kullanimi, RAM, disk, ag. `sysinfo` uzerinden, uc platformda
   ayni kod, yonetici hakki istemiyor.
-- **Kalan: GPU ve CPU sicakligi.** Gelistirme makinesinde NVIDIA yok
-  (NVML test edilemez), AMD ADLX C++ SDK'si indirilip baglanmadi, HWiNFO
-  kurulu degil. Ucu de yazilacak ama test edilemeyen kod yazilmadi.
+- **GPU ve CPU sicakligi: Windows'ta calisiyor (2026-09-20).** MSI
+  Afterburner acikken paylasimli bellekten okunuyor ve olculdu: GPU
+  55.0 C, CPU 64.1 C, ayrica GPU kullanimi ve VRAM. Panelde iki
+  gosterge de sicaklik satirini ciziyor.
+  Bu yolda bir hata bulunup duzeltildi: `system` kaynagi CPU
+  sicakligini duz atama ile yaziyor ve Afterburner'in okudugunu her
+  turda `None` ile eziyordu. Kural: bir kaynagin okuyamadigi deger
+  baska bir kaynagin okudugunu silmez. Ayrintisi
+  `docs/measurements.md`.
+- **Kalan: Afterburner disi yollar.** Gelistirme makinesinde NVIDIA yok
+  (NVML test edilemez), AMD ADLX C++ SDK'si indirilip baglanmadi,
+  HWiNFO kurulu degil. Yazilacak ama test edilemeyen kod yazilmadi.
 - Linux: /sys/class/hwmon ve /proc
 - macOS: temel metrikler, sicaklik kapsam disi
 
@@ -374,33 +383,26 @@ disi).
       istegiyle ertelendi. **Kapatmadan once cozulmesi gereken:**
       yaklasik 26 dakikada bir, trafikten bagimsiz olarak tek bir ACK
       dusuyor (106 dakikada 4 kez). Ayrintisi `docs/measurements.md`.
-- [~] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
-      kareyle kalmiyor. **Yazildi ve yuklendi, gorsel onay bekliyor.**
-      Cihaz 4 saniye mesaj gelmezse bekleme ekranina dusuyor (koyu
-      zemin, BAGLANTI YOK, arka isik 220'den 70'e). PC bostayken
-      1500 ms'de bir PING gonderiyor, cunku dirty tracking yuzunden
-      durgun ekranda hic cerceve gitmiyor.
-      Kullanici molaya cikmadan once dogrulayamadi; bir sonraki
-      oturumda sorulacak. Ayrintisi `docs/measurements.md`.
+- [x] Uygulama kapatildiginda cihaz makul bir ekrana dusuyor, donmus son
+      kareyle kalmiyor. Cihaz 4 saniye mesaj gelmezse bekleme ekranina
+      dusuyor (koyu zemin, BAGLANTI YOK, arka isik 220'den 70'e). PC
+      bostayken 1500 ms'de bir PING gonderiyor, cunku dirty tracking
+      yuzunden durgun ekranda hic cerceve gitmiyor.
+      **Gorsel onay alindi (2026-09-20):** canli kosuda kirpma yok,
+      kapaninca bekleme ekrani geliyor, arka isik kisiliyor, tekrar
+      acilinca panel kalintisiz geri geliyor. Makine tarafi da ayni
+      yonde: 60 saniyelik kosuda 475 cerceve, NACK 0, ACK zaman asimi
+      0 ve cihaz log'unda tam bir gecis (`4001 ms sessizlik`). Eski
+      hatada 30 saniyede 2 sahte gecis oluyordu.
 
 ### Faz 2'de kalan is
 
-Faz 2'nin sekiz kriterinden besi kapandi. Kalanlar ve tam olarak ne
-gerektigi:
+Faz 2'nin sekiz kriterinden **altisi** kapandi. Kalanlar ve tam olarak
+ne gerektigi:
 
-**1. Bekleme ekraninin gorsel onayi** (kriter isaretli ama `~`)
+**1. Seyrek ACK zaman asimi**
 
-Kod yazildi, firmware yuklendi, dizi kosuldu. Kullaniciya sorulacak:
-uygulama calisirken panel duzgun mu ve kirpma bitti mi; kapaninca
-yaklasik 4 saniye sonra bekleme ekrani geliyor mu; arka isik kisiliyor
-mu; tekrar acilinca panel tam geri geliyor mu, kalinti var mi.
-
-Onceki denemede kullanici kirpma bildirmisti, sebebi bulunup
-duzeltildi (`!Serial`), ama duzeltme sonrasi henuz goz onayi yok.
-
-**2. Seyrek ACK zaman asimi**
-
-Trafikten bagimsiz, dusuk oranli, sebebi bulunamadi.
+Trafikten bagimsiz, dusuk oranli, sebebi henuz bulunamadi.
 
 | Olcum | Oran |
 |---|---|
@@ -412,16 +414,28 @@ PONG birikmesi gercek bir hataydi ve duzeldi. Kalan oranin eski
 seviyeye dondugu **dogrulanmadi**, nadir olay oldugu icin uzun bir
 kosu gerekiyor. 24 saatlik kriter kapatilmadan once cozulmeli.
 
-Suphe listesi: Windows USB secici askiya alma, cihaz tarafinda
-periyodik bir is, yaklasik 26 dakikada dolan bir tampon durumu.
+**2026-09-20: baglantiya tanilama eklendi.** Artik her bekleyis
+olculuyor, zaman asiminda olayin cevresi yaziliyor: surucude bekleyen
+bayt, iki saniyelik bekleyiste okunan bayt, vazgectikten sonra gelen
+gec onaylar. Ayrintisi `docs/measurements.md`.
 
-**3. 24 saat kesintisiz kosu**
+Ilk bulgu suphe listesini daraltti: 853 cerceveden olusan uc kisa
+kosuda en uzun **basarili** onay bekleyisi 3 ms, sinir ise 2000 ms.
+Gecikme kuyrugu yok, yani "tampon giderek doluyor" ve "yuk artinca
+gecikiyor" aciklamalari zayif. Kalan resim hattin bir anda tamamen
+durmasi.
+
+Kalan suphe: Windows USB secici askiya alma, ya da cihaz tarafinda
+uzun suren periyodik bir is. `bytes_during` alani ikisini ayirir.
+Uzun kosu henuz yapilmadi, kullanici erteledi.
+
+**2. 24 saat kesintisiz kosu**
 
 106 dakikalik ara dogrulama temiz cikti (bellek 45.4 -> 45.5 MB,
 suruklenme yok). Tam sureli kosu kullanicinin istegiyle ertelendi.
-Madde 2 cozulmeden baslatmanin anlami yok.
+Madde 1 cozulmeden baslatmanin anlami yok.
 
-**4. macOS ve Linux'ta gercek calisma**
+**3. macOS ve Linux'ta gercek calisma**
 
 CI uc platformda da derliyor ve Linux ile Windows'ta testler geciyor.
 Eksik olan: macOS'ta temel metriklerin ekranda goruldugunun elle

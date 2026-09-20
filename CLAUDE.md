@@ -3,13 +3,13 @@
 Masaustunde duran, bilgisayara USB ile baglanan ikinci ekran.
 
 **Yol haritasi ve faz tanimlari `plans.md` icinde. Is yapmadan once oku.**
-Su anki asama: **Faz 2, sekiz kriterin besi kapali.** Faz 0 ve Faz 1
+Su anki asama: **Faz 2, sekiz kriterin altisi kapali.** Faz 0 ve Faz 1
 bitti. PC kodu `pc/` altinda Rust ile, ayrintisi `pc/README.md`.
 
 **Devam ederken once `plans.md` icindeki "Faz 2'de kalan is" bolumunu
-oku.** Orada kalan dort is ve bekleyen panel gorus acisi konusu tek tek
-yazili. Ilk yapilacak sey kullaniciya bekleme ekranini sormak: kod
-yazildi ve yuklendi ama gorsel onay alinmadi.
+oku.** Orada kalan uc is ve bekleyen panel gorus acisi konusu tek tek
+yazili. Siradaki is seyrek ACK zaman asiminin sebebini bulmak; baglantiya
+tanilama eklendi ama olayi yakalayacak uzun kosu henuz yapilmadi.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek
@@ -185,6 +185,13 @@ pc/target/release/mscreen.exe sensors --dump   # Afterburner ham girdileri
 o alanlar `None` kalir ve widget o satirlari hic cizmez; bu hata degil,
 tasarim. Afterburner'i kurulumcuya gommek EULA'ya tabi, dogru yaklasim
 tespit edip kullaniciyi yonlendirmek.
+
+Acikken olculdu (2026-09-20): GPU 55.0 C, CPU 64.1 C, GPU kullanimi ve
+VRAM de geliyor. **`Snapshot` kaynaklar arasinda ortak ve birikimlidir:
+bir kaynagin okuyamadigi deger, baska bir kaynagin okudugunu silmemeli.**
+Yeni sensor kaynagi yazarken `out.alan = self.oku()` degil, okuma
+basariliysa atama yap. `system` kaynagi bu yuzden Afterburner'in CPU
+sicakligini eziyordu.
 
 ## Kritik: `!Serial` baglanti kopma isareti degil
 

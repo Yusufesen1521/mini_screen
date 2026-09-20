@@ -1090,13 +1090,129 @@ de karar kullanicinin; kapsam 5 fiziksel artı 20 yazilim cevrimi
 olarak daraltildi ve yazilim tarafi asil riskli olan yeniden
 numaralandirma yolunu zaten kapsiyor.
 
-### Dogrulanmayi bekleyen
+### Gorsel onay alindi
 
-Bekleme ekraninin **gorsel olarak** dogru calistigi henuz kullanici
-tarafindan onaylanmadi. Duzeltilmis firmware yuklendi ve dizi
-kosuldu ama kullanici molaya cikti. Bir sonraki oturumda sorulacak:
+Tarih: 2026-09-20. Kullanici ekrana bakarken uc asamali dizi kosuldu,
+dordu de onaylandi:
 
-- Uygulama calisirken panel duzgun mu, kirpma bitti mi
-- Kapaninca yaklasik 4 saniye sonra bekleme ekrani geliyor mu
-- Arka isik kisiliyor mu
-- Tekrar acilinca panel tam geri geliyor mu, kalinti var mi
+| Soru | Sonuc |
+|---|---|
+| Canli kosuda panel duzgun mu, kirpma bitti mi | **Temiz, kirpma yok** |
+| Kapaninca bekleme ekrani geliyor mu | **Geliyor** |
+| Arka isik kisiliyor mu | **Kisiliyor** |
+| Tekrar acilinca kalinti kaliyor mu | **Tam geri geliyor, kalinti yok** |
+
+Makine tarafi da ayni yonu gosterdi. 60 saniyelik kosuda 475 cerceve,
+NACK 0, ACK zaman asimi 0; cihaz log'unda **tam bir tane** gecis var:
+
+```
+baglanti yok, 4001 ms sessizlik
+```
+
+Eski hatada gecis kosu icinde tekrar tekrar olusuyordu (30 saniyede 2
+sahte gecis). Simdi kosu boyunca sifir, sadece kapanista bir tane.
+`!Serial` duzeltmesi hem olcumle hem gozle dogrulandi.
+
+**Bu kriter kapandi.**
+
+---
+
+## Faz 2: ACK zaman asimi tanilamasi
+
+Tarih: 2026-09-20
+
+Seyrek ACK zaman asiminin sebebi bulunamamisti ve 24 saatlik kriterin
+onunde duruyor. Tahmin listesini uzatmak yerine baglantiya olay aninda
+dogru olani kaydettirdik.
+
+### Eklenen olcum
+
+`Link` artik her bekleyisi olcuyor ve zaman asiminda cevreyi yaziyor:
+
+| Alan | Ne soyluyor |
+|---|---|
+| `max_wait` | Basarili bekleyislerin en uzunu, pencere basina |
+| `waiting_bytes` | Vazgecerken surucude bekleyen bayt. Sifirdan buyukse veri gelmisti ve biz isleyemedik |
+| `bytes_during` | Iki saniyelik bekleyiste okunan bayt. Sifirsa hat tamamen sustu |
+| `late_acks` | Vazgectikten sonra yine de gelen onay. Varsa olay "kayip" degil "gecikme" |
+| `unexpected` | Beklenmeyen cerceve tipi sayisi |
+
+Vazgecilen sira numaralari 4 saniye hatirlaniyor. Sira numarasi u8,
+yani 256 cercevede tekrar ediyor; daha uzun tutulursa ayni numarayi
+tasiyan yeni bir cercevenin onayi "gec gelen onay" sanilir.
+
+Ayrica beklenmeyen cerceve tipleri artik sessizce inbox'ta birikmiyor,
+sayilip dusuruluyor. Onceki ACK hatasi tam olarak boyle gizlenmisti.
+
+### Ilk bulgu: gecikme kuyrugu yok, kopus var
+
+Uc kisa kosuda (22, 60 ve 25 saniye, toplam 853 cerceve) olculen en
+uzun **basarili** onay bekleyisi:
+
+| Kosu | enuzunACK |
+|---|---|
+| 22 sn | 0 - 3 ms |
+| 60 sn | 1 - 3 ms |
+| 25 sn | 0 - 2 ms |
+
+Normal onay suresi **0-3 ms**, zaman asimi siniri ise 2000 ms. Yani
+sinirin yaklasik 600 kati pay var.
+
+**Bu, olayin ne olmadigini soyluyor.** Yavas yavas buyuyen bir
+gecikme kuyrugu olsaydi sinira yaklasan bekleyisler cok daha sik
+gorunurdu; 850 cercevede en yuksek deger 3 ms. Yani "tampon giderek
+doluyor" ve "yuk artinca gecikiyor" aciklamalari zayifladi. Kalan
+resim: hat bir anda saniyeler boyunca tamamen duruyor.
+
+Suphe listesi buna gore daraldi:
+
+1. Windows USB secici askiya alma (selective suspend)
+2. Cihaz tarafinda uzun suren periyodik bir is
+
+`bytes_during` alani ikisini ayirt edecek: sifir gelirse hat sustu,
+sifirdan buyuk gelirse cihaz calisiyordu ama o onayi gondermedi.
+Olay nadir oldugu icin bunu ancak uzun bir kosu gosterir; kosu henuz
+yapilmadi.
+
+---
+
+## Faz 2: CPU sicakligi kaynaklar arasinda siliniyordu
+
+Tarih: 2026-09-20
+
+MSI Afterburner bu oturumda acikti ve ilk kez `afterburner` kaynagi
+calisir durumda yakalandi. Ama panel GPU sicakligini gosterirken CPU
+sicakligini gostermiyordu.
+
+`sensors --dump` ciktisi degerin **var** oldugunu gosterdi:
+
+```
+CPU temperature      63.625     ust sinir 100
+```
+
+Sebep esleme degil, uzerine yazma. `Snapshot` kaynaklar arasinda ortak
+ve birikimli. Kaynaklar `afterburner`, `system` sirasiyla kosuyor ve
+`system` kaynagi soyle yaziyordu:
+
+```rust
+out.cpu_temp_c = self.cpu_temperature();
+```
+
+`sysinfo` Windows'ta CPU sicakligi vermiyor, yani bu satir her turda
+Afterburner'in okudugu degeri `None` ile eziyordu. Kural artik acik:
+**bir kaynagin okuyamadigi deger, baska bir kaynagin okudugunu
+silmez.**
+
+Duzeltme sonrasi ayni makinede:
+
+| | Once | Sonra |
+|---|---|---|
+| CPU sicaklik | yok | **64.1 C** |
+| GPU sicaklik | 55.0 C | 55.0 C |
+
+Panelde CPU gostergesinin altinda sicaklik satiri ilk kez ciziliyor.
+Regresyon testi eklendi: `baska_kaynagin_sicakligi_silinmiyor`.
+
+**Not:** "eksik sensor kaynagi widget'i bozmuyor" kriteri bu makinede
+kaynaklar gercekten yokken dogrulanmisti, o kanit gecerli kalir. Simdi
+tersi de gorulmus oldu: kaynak gelince satirlar kendiliginden ciziliyor.

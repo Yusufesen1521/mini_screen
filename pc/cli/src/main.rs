@@ -284,6 +284,9 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
     let mut window_rects = 0u64;
     let mut window_ticks = 0u64;
     let mut idle_ticks = 0u64;
+    // Zaman asimi olaylarindan kaci basildi. Olay nadir ve kosu uzun;
+    // oldugu anda basilmazsa hangi pencereye denk geldigi kaybolur.
+    let mut reported_timeouts = 0usize;
 
     loop {
         if seconds > 0 && start.elapsed() >= Duration::from_secs(seconds) {
@@ -336,10 +339,30 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
             last_sent = Instant::now();
         }
 
+        // Zaman asimi olustuysa cevresini hemen bas. Sebebi bulunamamis
+        // bir olay bu, kaydi olusma aninda alinmali.
+        while reported_timeouts < link.diag.timeouts.len() {
+            let e = link.diag.timeouts[reported_timeouts];
+            println!(
+                "  [ACK ZAMAN ASIMI] {:.1} sn  sira={}  cerceve={}  bayt={}  \
+                 beklemede={} bayt  bekleyis boyunca={} bayt  kuyruk={}",
+                e.at.as_secs_f64(),
+                e.seq,
+                e.frames_sent,
+                e.bytes_sent,
+                e.waiting_bytes,
+                e.bytes_during,
+                e.pending,
+            );
+            reported_timeouts += 1;
+        }
+
         if window_start.elapsed() >= STATS_PERIOD {
             let secs = window_start.elapsed().as_secs_f64();
+            let max_wait = link.take_max_wait();
             println!(
-                "{:>5.0} sn  tur={} bos={} ({:.0}%)  dikdortgen={}  {:.0} bayt/sn  NACK={} ACKzaman={}",
+                "{:>5.0} sn  tur={} bos={} ({:.0}%)  dikdortgen={}  {:.0} bayt/sn  \
+                 NACK={} ACKzaman={} enuzunACK={:.0} ms",
                 start.elapsed().as_secs_f64(),
                 window_ticks,
                 idle_ticks,
@@ -348,6 +371,7 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
                 window_bytes as f64 / secs,
                 link.stats.nacks,
                 link.stats.ack_timeouts,
+                max_wait.as_secs_f64() * 1000.0,
             );
             window_start = Instant::now();
             window_bytes = 0;
@@ -364,5 +388,40 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
         "\nToplam: {} cerceve, {} bayt, NACK {}, ACK zaman asimi {}",
         link.stats.frames_sent, link.stats.bytes_sent, link.stats.nacks, link.stats.ack_timeouts
     );
+    println!(
+        "Gec gelen onay: {} (en buyuk gecikme {:.0} ms), beklenmeyen cerceve: {}",
+        link.diag.late_acks,
+        link.diag.max_late.as_secs_f64() * 1000.0,
+        link.diag.unexpected,
+    );
+
+    // Olaylarin dokumu. Aralarindaki sure duzenliyse sistematik bir sey
+    // var demektir; 106 dakikalik kosuda araliklar 25-29 dakikaydi.
+    if !link.diag.timeouts.is_empty() {
+        println!("\nACK zaman asimi dokumu:");
+        println!("  an (sn)   arali(sn)  sira  cerceve     bayt  beklemede  bekleyiste");
+        let mut prev: Option<Duration> = None;
+        for e in &link.diag.timeouts {
+            let gap = match prev {
+                Some(p) => format!("{:9.1}", (e.at - p).as_secs_f64()),
+                None => "        -".to_string(),
+            };
+            println!(
+                "  {:7.1} {} {:5} {:8} {:8} {:10} {:11}",
+                e.at.as_secs_f64(),
+                gap,
+                e.seq,
+                e.frames_sent,
+                e.bytes_sent,
+                e.waiting_bytes,
+                e.bytes_during,
+            );
+            prev = Some(e.at);
+        }
+        println!(
+            "\n  Okuma: 'beklemede' sifirdan buyukse veri surucude duruyordu, kabahat\n  \
+             PC tarafinda. 'bekleyiste' sifirsa hat iki saniye tamamen sustu."
+        );
+    }
     Ok(())
 }

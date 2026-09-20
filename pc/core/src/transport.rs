@@ -25,6 +25,16 @@ const POLL_IDLE_SLEEP: Duration = Duration::from_millis(1);
 const RECONNECT_POLL: Duration = Duration::from_millis(250);
 /// Acilista port bekleme suresi. Yeniden numaralandirma bunun altinda kaliyor.
 pub const OPEN_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Tanilama icin saklanan en fazla zaman asimi olayi. 24 saatlik kosuda
+/// yaklasik 55 olay bekleniyor, bu sinir bellegi baglamak icin.
+const TIMEOUT_LOG_LIMIT: usize = 256;
+/// Vazgecilen siralarin hatirlanma suresi.
+///
+/// Sira numarasi u8, yani 256 cercevede bir tekrar ediyor. 24 FPS'te bu
+/// yaklasik 10 saniye. Vazgecilen bir sirayi bundan uzun tutarsak ayni
+/// numarayi tasiyan **yeni** bir cercevenin onayini "gec gelen onay"
+/// sanariz. Bu sure hem o tekrardan hem de ACK_TIMEOUT'tan kisa.
+const ABANDONED_TTL: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone)]
 pub struct Caps {
@@ -83,6 +93,53 @@ pub struct LinkStats {
     pub ack_timeouts: u32,
     pub frames_sent: u64,
     pub bytes_sent: u64,
+}
+
+/// Tek bir ACK zaman asimi olayinin cevresi.
+///
+/// Seyrek zaman asiminin sebebi bulunamadi ve 24 saatlik cikis kriterinin
+/// onunde duruyor. Tahmin yerine olcum: vazgecme aninda dogru olan ne
+/// varsa kaydediliyor. Ayirt edici iki alan `waiting_bytes` ve
+/// `bytes_during`; hangi tarafin suclu oldugunu onlar soyluyor.
+#[derive(Debug, Clone, Copy)]
+pub struct AckTimeout {
+    /// Baglanti acildigindan beri gecen sure.
+    pub at: Duration,
+    /// Vazgecilen cercevenin sira numarasi.
+    pub seq: u8,
+    /// O ana kadar gonderilen cerceve ve bayt. Olay bir sayacin belirli
+    /// bir degerinde tekrarliyorsa buradan gorunur.
+    pub frames_sent: u64,
+    pub bytes_sent: u64,
+    /// Vazgecerken surucude okunmayi bekleyen bayt. Sifirdan buyukse
+    /// veri gelmisti ve biz isleyemedik, yani kabahat PC tarafinda.
+    pub waiting_bytes: u32,
+    /// Iki saniyelik bekleyis boyunca porttan okunan toplam bayt.
+    /// Sifirsa hat tamamen sustu (surucu askiya alma ya da cihaz
+    /// takildi); sifirdan buyukse trafik akiyordu ama bu onay gelmedi.
+    pub bytes_during: usize,
+    /// Vazgectikten sonra kalan bekleyen cerceve sayisi.
+    pub pending: usize,
+}
+
+/// Onay gecikmesi tanilamasi.
+#[derive(Debug, Default, Clone)]
+pub struct AckDiag {
+    /// Basarili bekleyislerin en uzunu. Tuketen sifirlar.
+    ///
+    /// Zaman asimindan cok daha sik olusan "kil payi" bekleyisleri
+    /// gosterir. Bu deger ACK_TIMEOUT'a yaklasiyorsa olay nadir bir
+    /// kayip degil, surekli bir gecikmenin ucudur.
+    pub max_wait: Duration,
+    /// Vazgecildikten sonra yine de gelen onay sayisi.
+    pub late_acks: u32,
+    /// Gec gelen onaylarin vazgecme anina gore en buyuk gecikmesi.
+    pub max_late: Duration,
+    /// Beklenmeyen cerceve tipleri. Sessizce inbox'ta birikmelerini
+    /// engelliyoruz: onceki ACK hatasi tam olarak boyle gizlenmisti.
+    pub unexpected: u32,
+    /// Zaman asimi olaylari, olus sirasiyla.
+    pub timeouts: Vec<AckTimeout>,
 }
 
 /// Bulunan bir cihaz portu.
@@ -174,6 +231,12 @@ pub struct Link {
     pending: Vec<u8>,
     pub caps: Option<Caps>,
     pub stats: LinkStats,
+    pub diag: AckDiag,
+    /// Baglantinin acildigi an. Olaylarin zamani buna gore.
+    opened: Instant,
+    /// Vazgecilen siralar ve vazgecme anlari. Gec gelen onayi yakalamak
+    /// icin; `ABANDONED_TTL` gecince atiliyor.
+    abandoned: Vec<(u8, Instant)>,
     /// Cihazdan gelen LOG satirlari. Tuketen bosaltir.
     pub logs: Vec<String>,
     // Sicak yolda yeniden kullanilan tamponlar. Kare basina tahsis yok.
@@ -207,6 +270,9 @@ impl Link {
             pending: Vec::new(),
             caps: None,
             stats: LinkStats::default(),
+            diag: AckDiag::default(),
+            opened: Instant::now(),
+            abandoned: Vec::new(),
             logs: Vec::new(),
             frame_buf: Vec::with_capacity(p::MAX_PAYLOAD),
             region_buf: Vec::with_capacity(p::MAX_PAYLOAD),
@@ -264,7 +330,7 @@ impl Link {
 
         let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
         while Instant::now() < deadline {
-            self.pump()?;
+            let _ = self.pump()?;
             if let Some(i) = self.inbox.iter().position(|f| f.msg_type == p::MSG_CAPS) {
                 let f = self.inbox.remove(i);
                 let caps = Caps::parse(&f.payload).ok_or(LinkError::NoCaps)?;
@@ -280,14 +346,15 @@ impl Link {
     }
 
     /// Porttan okur, cerceveleri ayristirir, LOG olanlari ayiklar.
+    /// Okunan bayt sayisini doner.
     ///
     /// Bloklamaz: once bekleyen bayt var mi diye bakar. Bloklayan okuma
     /// her turda 200 ms yiyordu ve tur hizini saniyede 48'den 6'ya
     /// dusuruyordu.
-    fn pump(&mut self) -> Result<(), LinkError> {
+    fn pump(&mut self) -> Result<usize, LinkError> {
         let waiting = self.port.bytes_to_read().unwrap_or(0) as usize;
         if waiting == 0 {
-            return Ok(());
+            return Ok(0);
         }
         let want = waiting.min(self.read_buf.len());
         let n = match self.port.read(&mut self.read_buf[..want]) {
@@ -296,7 +363,7 @@ impl Link {
             Err(e) => return Err(LinkError::Io(e)),
         };
         if n == 0 {
-            return Ok(());
+            return Ok(0);
         }
         let mut fresh = Vec::new();
         let data = &self.read_buf[..n];
@@ -314,7 +381,7 @@ impl Link {
             }
         }
         self.trim_inbox();
-        Ok(())
+        Ok(n)
     }
 
     /// Gelen onaylari isler. En az biri islendiyse true doner.
@@ -325,7 +392,11 @@ impl Link {
             match self.inbox[i].msg_type {
                 p::MSG_ACK => {
                     let seq = self.inbox[i].seq;
-                    self.retire(seq);
+                    // Bekleyenler arasinda yoksa vazgectiklerimizden
+                    // olabilir: o zaman onay kaybolmamis, gecikmis.
+                    if !self.retire(seq) {
+                        self.note_if_late(seq);
+                    }
                     self.inbox.remove(i);
                     progressed = true;
                 }
@@ -346,7 +417,15 @@ impl Link {
                 p::MSG_PONG => {
                     self.inbox.remove(i);
                 }
-                _ => i += 1,
+                // CAPS ve STATUS bekleyen bir cagrinin mali, dokunmuyoruz.
+                p::MSG_CAPS | p::MSG_STATUS => i += 1,
+                // Geri kalan hicbir sey beklenmiyor. Sayilip dusuruluyor:
+                // sessizce inbox'ta birikmeleri onceki ACK hatasini tam
+                // olarak boyle gizlemisti.
+                _ => {
+                    self.diag.unexpected += 1;
+                    self.inbox.remove(i);
+                }
             }
         }
         progressed
@@ -361,29 +440,82 @@ impl Link {
     /// tampon tasiyor ve ACK'ler sessizce dusuyor. 20 saniyeden uzun
     /// kosularda kosu basina bir ACK zaman asimi bu yuzden olusuyordu.
     pub fn poll(&mut self) -> Result<(), LinkError> {
-        self.pump()?;
+        let _ = self.pump()?;
         self.process_inbox();
         Ok(())
     }
 
-    /// Onaylari toplar. En az bir ACK ya da NACK gelirse true doner.
-    fn reap(&mut self, timeout: Duration) -> Result<bool, LinkError> {
+    /// Onaylari toplar. En az bir ACK ya da NACK gelirse true doner,
+    /// ikinci deger bekleyis boyunca porttan okunan bayt sayisi.
+    ///
+    /// O sayi zaman asimi olayinda ayirt edici: sifirsa hat tamamen
+    /// sustu, sifirdan buyukse trafik akiyordu ama bu onay gelmedi.
+    fn reap(&mut self, timeout: Duration) -> Result<(bool, usize), LinkError> {
         let deadline = Instant::now() + timeout;
+        let mut seen = 0usize;
         while Instant::now() < deadline {
-            self.pump()?;
+            seen += self.pump()?;
             if self.process_inbox() {
-                return Ok(true);
+                return Ok((true, seen));
             }
             // pump bloklamiyor, bosa donmeyelim.
             std::thread::sleep(POLL_IDLE_SLEEP);
         }
-        Ok(false)
+        Ok((false, seen))
     }
 
-    fn retire(&mut self, seq: u8) {
+    /// Bekleyenler listesinden dusurur. Gercekten orada miydi, onu doner.
+    fn retire(&mut self, seq: u8) -> bool {
         if let Some(i) = self.pending.iter().position(|&s| s == seq) {
             self.pending.remove(i);
+            true
+        } else {
+            false
         }
+    }
+
+    /// Vazgectigimiz bir cerceve icin onay sonradan geldi mi.
+    ///
+    /// Geldiyse olay "onay kayboldu" degil "onay gecikti" demektir ve
+    /// sebep baska yerde aranir. Ayrimi olcmeden bilmek mumkun degil.
+    fn note_if_late(&mut self, seq: u8) {
+        self.prune_abandoned();
+        if let Some(i) = self.abandoned.iter().position(|&(s, _)| s == seq) {
+            let (_, when) = self.abandoned.remove(i);
+            let late = when.elapsed();
+            self.diag.late_acks += 1;
+            if late > self.diag.max_late {
+                self.diag.max_late = late;
+            }
+        }
+    }
+
+    /// Suresi dolan vazgecme kayitlarini atar. Ayrintisi ABANDONED_TTL.
+    fn prune_abandoned(&mut self) {
+        self.abandoned.retain(|&(_, when)| when.elapsed() < ABANDONED_TTL);
+    }
+
+    /// Bir zaman asimi olayini butun cevresiyle kaydeder.
+    fn note_timeout(&mut self, seq: u8, bytes_during: usize) {
+        let waiting_bytes = self.port.bytes_to_read().unwrap_or(0);
+        if self.diag.timeouts.len() < TIMEOUT_LOG_LIMIT {
+            self.diag.timeouts.push(AckTimeout {
+                at: self.opened.elapsed(),
+                seq,
+                frames_sent: self.stats.frames_sent,
+                bytes_sent: self.stats.bytes_sent,
+                waiting_bytes,
+                bytes_during,
+                pending: self.pending.len(),
+            });
+        }
+        self.prune_abandoned();
+        self.abandoned.push((seq, Instant::now()));
+    }
+
+    /// Bir pencerede olculen en uzun basarili bekleyisi alir ve sifirlar.
+    pub fn take_max_wait(&mut self) -> Duration {
+        std::mem::take(&mut self.diag.max_wait)
     }
 
     /// Bir piksel bolgesini cihaza basar.
@@ -413,10 +545,21 @@ impl Link {
         );
 
         while self.pending.len() >= self.window {
-            if !self.reap(ACK_TIMEOUT)? {
+            let waited = Instant::now();
+            let (ok, seen) = self.reap(ACK_TIMEOUT)?;
+            if ok {
+                // Kil payi bekleyisler zaman asimindan cok daha sik.
+                // En uzununu tutuyoruz ki olay nadir bir kayip mi yoksa
+                // buyuyen bir gecikmenin ucu mu, gorulebilsin.
+                let w = waited.elapsed();
+                if w > self.diag.max_wait {
+                    self.diag.max_wait = w;
+                }
+            } else {
                 // Bu cerceveden umudu kes, yoksa tikanip kaliriz.
                 self.stats.ack_timeouts += 1;
-                self.pending.remove(0);
+                let dropped = self.pending.remove(0);
+                self.note_timeout(dropped, seen);
             }
         }
 
@@ -435,9 +578,13 @@ impl Link {
     /// Bekleyen butun onaylari toplar. Kapanistan once cagrilir.
     pub fn drain(&mut self, timeout: Duration) -> Result<bool, LinkError> {
         while !self.pending.is_empty() {
-            if !self.reap(timeout)? {
+            let (ok, seen) = self.reap(timeout)?;
+            if !ok {
                 self.stats.ack_timeouts += self.pending.len() as u32;
-                self.pending.clear();
+                let left = std::mem::take(&mut self.pending);
+                for seq in left {
+                    self.note_timeout(seq, seen);
+                }
                 return Ok(false);
             }
         }
@@ -480,7 +627,7 @@ impl Link {
 
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
-            self.pump()?;
+            let _ = self.pump()?;
             if let Some(i) = self.inbox.iter().position(|f| f.msg_type == p::MSG_STATUS) {
                 return Ok(Some(self.inbox.remove(i)));
             }
