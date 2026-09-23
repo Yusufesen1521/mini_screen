@@ -1256,3 +1256,72 @@ calistigini gosteriyor, o acik konuyu kapatmiyor.
 `["clock", "gauges", "hwmon", "sysinfo", "uptime"]`. Widget kendini
 kaydetti, cekirdekte widget adi gecen tek satir degismedi. Faz 2'nin
 widget soyutlamasi kriteri ucuncu gercek widget ile de tuttu.
+
+---
+
+## Faz 2: MISO baglandi, panel geri okumasi
+
+Tarih 2026-09-23. Gerekcesi bir onceki oturumda yasanan beyaz ekran:
+panel init'ini kaybetmisti, butun protokol sayaclari yesil kaliyordu ve
+tek cozum karti resetlemekti. Firmware'in soracak bir yolu yoktu.
+
+### Baglanti
+
+Panelin SDO(MISO) ucu **GPIO 13**'e baglandi. Bu pin ESP32-S3'te SPI2
+(FSPI) MISO'sunun IOMUX karsiligi, yani 10/11/12 ile ayni yoldan gidiyor,
+GPIO matrisi uzerinden degil. Dokunmatik olcumunden sonra bos kalmisti.
+
+`spi_read_frequency` 20 MHz'den **5 MHz'e** indirildi. ILI9341 veri sayfasi
+RDX cevrimi icin en az 150 ns istiyor, yani okuma tavani 6.6 MHz. 20 MHz
+ile birakilsa register okumasi sessizce cop dondururdu. Yazma hizi
+40 MHz'de kaldi, ikisi ayri sabit.
+
+### Init sonrasi ilk okuma
+
+| Register | Okunan | Anlami |
+|---|---|---|
+| RDDPM (0x0A) | 0x9C | uyku disi 1, normal kip 1, ekran acik 1, booster 1 |
+| RDDMADCTL (0x0B) | 0xE8 | MY, MX, MV set ve BGR set, yani `DISPLAY_ROTATION` 3 |
+| RDDCOLMOD (0x0C) | 0x05 | 16 bit piksel, bizim bastigimizla ayni |
+| RDDSDR (0x0F) | 0xC0 | denetleyicinin kendi tanisi: register yuklemesi ve islevsellik TAMAM |
+| RDDID (0x04) | 00 00 00 00 | **gelmedi** |
+| RDID4 (0xD3) | 00 FF 00 FF | **gelmedi** |
+
+Piksel gidis donus testi: bes farkli renk (0xF800, 0x07E0, 0x001F,
+0xFFFF, 0x0000) yazildi ve birebir geri okundu, **5 / 5**.
+
+### Kimlik registerleri neden gelmiyor
+
+RDDID ve RDID4 anlamsiz donuyor ama bu bir hat sorunu degil. Hat kopuk
+olsa butun registerler 0x00 ya da 0xFF gelirdi; oysa bes ayri register
+birbirinden farkli ve hepsi beklenen degerde, ustelik piksel gidis
+donusu tam. TFT_eSPI'nin `readcommand8` fonksiyonu ILI9341'in 0xD9 indeks
+registeri uzerinden okuyor ve bu yontem cok baytli kimlik komutlarinda
+guvenilir calismiyor.
+
+**Cikan kural: saglik kontrolu kimlik registerlerine dayandirilmaz.**
+Karar RDDPM ve RDDCOLMOD uzerinden veriliyor, ikisi de olculdu.
+
+### 120 saniyelik kosu, canli basma sirasinda
+
+Periyodik kontrol `PANEL_CHECK_INTERVAL_MS` 5000 ms. Okuma sadece butun
+cozme tamponlari serbestken yapiliyor: basma gorevi 0. cekirdekte tft'yi
+kullaniyor, kontrol 1. cekirdekte ve TFT_eSPI iplik guvenli degil.
+
+| Olcum | Deger |
+|---|---|
+| Sure | 120 sn |
+| Gonderilen cerceve | 574 |
+| Panel saglik okumasi | 27 |
+| Farkli sonuc sayisi | **1** |
+| Okunan | `PM 0x9C COLMOD 0x05 SDR 0xC0`, 27 / 27 |
+| NACK, ACK zaman asimi | 0, 0 |
+
+Yirmi yedi okumanin yirmi yedisi birebir ayni. Yani geri okuma canli
+basma trafigi altinda da kararli ve yanlis alarm uretmiyor.
+
+### Kalan is
+
+Bu surum sadece **raporluyor**, otomatik yeniden init yok. Once okumanin
+kararli oldugunu olcmek gerekiyordu, olculdu. Otomatik kurtarma ayri bir
+adim.

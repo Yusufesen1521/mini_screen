@@ -28,13 +28,38 @@ sayi yazilir.
   Protokol yerlesik USB portundan, `Serial0` loglari UART kopru
   portundan gider; artik ikisi ayni anda mumkun.
 
+### Beyaz ekran: panel init'ini kaybedebiliyor
+
+2026-09-23'te yasandi. Panel dumduz beyaz kaldi, protokol sayaclarinin
+hepsi yesildi, cihaz resetlenince duzeldi. Teshis: ILI9341 kendi acilis
+haline donmustu, arka isik GPIO 21'den bagimsiz suruldugu icin ekran
+yanmaya devam ediyordu. En olasi tetikleyici canli kartta yapilan bir
+besleme gecisi (ikinci USB kablosunun takilmasi).
+
+**Yazma tarafi bu durumu hicbir zaman bildirmez**, `pushImage` sessizce
+basarili doner. Tek tespit yolu MISO uzerinden geri okuma, o yuzden
+baglandi. Su an firmware her 5 saniyede bir soruyor ve **sadece
+raporluyor**; otomatik yeniden init henuz yok.
+
 **Dokunmatik YOK, olculerek dogrulandi.** Urun sayfasi dokunmatik diyordu,
 poset "touch: no" diyordu. XPT2046 hatlari (T_CS GPIO 18, T_DO GPIO 13)
 gecici olarak baglanip `tft.getTouchRawZ()` okundu: deger hem bagliyken hem
 degilken sabit 0. Denetleyici olsaydi gurultu bile okunurdu. Dokunmatik kodu
 kaldirildi, GPIO 13 ve 18 serbest. Bu konuyu tekrar acma, olculdu.
 
-MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
+**MISO bagli, GPIO 13.** Ekrandan geri okuma yapilabiliyor ve olculdu:
+RDDPM 0x9C, RDDCOLMOD 0x05, RDDSDR 0xC0, piksel gidis donusu 5/5.
+`src/panel_settings.cpp` icindeki `panelReadHealth` ve `panelHealthy`
+bunu kullaniyor, `main.cpp` her 5 saniyede bir soruyor.
+
+Kimlik registerleri (RDDID 0x04, RDID4 0xD3) anlamsiz donuyor, bu hat
+sorunu degil: TFT_eSPI'nin 0xD9 indeks yontemi cok baytli kimlik
+komutlarinda tutmuyor. **Saglik kontrolu kimlige dayandirilmaz**, RDDPM
+ve RDDCOLMOD kullanilir.
+
+`spi_read_frequency` 5 MHz olmak zorunda. ILI9341 RDX cevrimi en az
+150 ns, yani okuma tavani 6.6 MHz. Yukseltirsen register okumasi
+sessizce cop doner. Yazma 40 MHz'de kalir, ikisi ayri sabit.
 
 ## Pin haritasi
 
@@ -46,6 +71,7 @@ MISO baglanmiyor, `TFT_MISO` tanimlanmiyor. Ekrandan geri okuma yapilamaz.
 | RESET | 9 |
 | DC | 14 |
 | SDI (MOSI) | 11 |
+| SDO (MISO) | 13 |
 | SCK | 12 |
 | LED | 21 |
 
@@ -59,9 +85,9 @@ Butonlar (iki bacakli switch, oteki bacak GND, dahili pull-up):
 Kullanilamaz pinler: GPIO 26-37 dahili flash ve oktal PSRAM tarafindan
 kullaniliyor. GPIO 0, 3, 19, 20, 45, 46 strapping veya USB gorevli.
 
-Bos ve kullanilabilir: GPIO 6, 7, 8, 13, 15, 16, 17, 18 ve saga taraftaki
+Bos ve kullanilabilir: GPIO 6, 7, 8, 15, 16, 17, 18 ve saga taraftaki
 1, 2, 35-42, 47, 48. Rotary encoder ve ek butonlar buradan secilecek.
-(4 ve 5 test butonlarinda.)
+(4 ve 5 test butonlarinda, 13 ekran MISO'sunda.)
 
 ## Kritik: USE_FSPI_PORT silinmemeli
 

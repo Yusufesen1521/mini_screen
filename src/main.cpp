@@ -19,6 +19,7 @@
 #include "crc.h"
 #include "framer.h"
 #include "log.h"
+#include "panel_settings.h"
 #include "pins.h"
 #include "protocol.h"
 #include "rle16.h"
@@ -58,6 +59,10 @@ struct PushJob {
 static uint16_t     *decodeBuf[DECODE_BUF_COUNT] = {nullptr, nullptr};
 static QueueHandle_t pushQueue = nullptr;   // PushJob
 static QueueHandle_t freeBufs = nullptr;    // uint8_t, bos tampon indeksi
+
+// Panel saglik kontrolu durumu. Ayrintisi panelHealthTick() basinda.
+static uint32_t lastPanelCheckMs = 0;
+static bool     panelWasHealthy  = true;
 
 static bool     connected = false;
 // Bekleme ekrani durumu ve son gecerli mesajin zamani. lastMsgMs sifir
@@ -411,6 +416,96 @@ static const ColorBlock kColorBlocks[BLOCK_COUNT] = {
   { COLOR_BLOCK_WHITE, COLOR_BACKGROUND, "WHITE" },
 };
 
+// Panelden geri okunani ham haliyle basar.
+//
+// MISO GPIO 13'e baglandi, yani artik panelin hala init edilmis durumda
+// oldugu sorulabiliyor. Yazma tarafi hicbir zaman hata vermez: panel
+// kablosu cikmis olsa bile pushImage sessizce basarili doner. Tek
+// dogrulama yolu bu.
+//
+// Simdilik sadece basiliyor. Buna dayali otomatik kurtarma, degerler
+// gercek donanimda olculduktan sonra yazilacak; olculmemis bir esik
+// tahmin olurdu.
+static void logPanelStatus(const char *when)
+{
+  const PanelStatus s = panelReadStatus(tft);
+  logPrintf("Panel geri okuma (%s):\n", when);
+  logPrintf("  RDDID   (04) : %02X %02X %02X %02X\n",
+            s.id[0], s.id[1], s.id[2], s.id[3]);
+  logPrintf("  RDID4   (D3) : %02X %02X %02X %02X   ILI9341 ise icinde 93 41 olmali\n",
+            s.id4[0], s.id4[1], s.id4[2], s.id4[3]);
+  logPrintf("  RDDPM   (0A) : 0x%02X   uyku disi %u, ekran acik %u, booster %u\n",
+            s.power, (unsigned)((s.power >> 4) & 1),
+            (unsigned)((s.power >> 2) & 1), (unsigned)((s.power >> 7) & 1));
+  logPrintf("  RDDMADCTL(0B): 0x%02X\n", s.madctl);
+  logPrintf("  RDDCOLMOD(0C): 0x%02X   16 bit ise 0x05\n", s.pixfmt);
+  logPrintf("  RDDIM   (0D) : 0x%02X\n", s.imgfmt);
+  logPrintf("  RDDSM   (0E) : 0x%02X\n", s.signal);
+  logPrintf("  RDDSDR  (0F) : 0x%02X\n", s.selfdiag);
+}
+
+// Piksel gidip geri geliyor mu. Register okumasi hattin calistigini
+// gosterir, bu ise cerceve belleginin gercekten yazildigini.
+//
+// Test pikselleri sol ust koseye yaziliyor ve hemen ardindan gelen
+// drawSplash() onlari siliyor.
+static void logPixelRoundtrip()
+{
+  static const uint16_t kTest[] = {
+    COLOR_BLOCK_RED, COLOR_BLOCK_GREEN, COLOR_BLOCK_BLUE,
+    COLOR_BLOCK_WHITE, COLOR_BACKGROUND,
+  };
+  const uint8_t count = sizeof(kTest) / sizeof(kTest[0]);
+
+  uint8_t ok = 0;
+  logPrintf("Piksel gidis donus:\n");
+  for (uint8_t i = 0; i < count; i++) {
+    const uint16_t got = panelPixelRoundtrip(tft, i, 0, kTest[i]);
+    const bool same = (got == kTest[i]);
+    ok += same ? 1 : 0;
+    logPrintf("  yazilan 0x%04X  okunan 0x%04X  %s\n",
+              (unsigned)kTest[i], (unsigned)got, same ? "TAMAM" : "FARKLI");
+  }
+  logPrintf("  sonuc: %u / %u\n", (unsigned)ok, (unsigned)count);
+}
+
+// Periyodik panel saglik kontrolu.
+//
+// **Neden var:** yazma tarafi hicbir zaman hata vermiyor. Panel init'ini
+// kaybederse pushImage yine basarili doner, butun protokol sayaclari yesil
+// kalir ve ekran beyaz durur. Bu bir kez yasandi ve tek cozumu karti
+// resetlemekti, cunku firmware'in soracak bir yolu yoktu. MISO baglandi,
+// artik var.
+//
+// **Neden kuyruk bos degilken okumuyor:** basma gorevi 0. cekirdekte
+// tft'yi kullaniyor, bu kod 1. cekirdekte, TFT_eSPI ise iplik guvenli
+// degil. Butun cozme tamponlari serbestse ucusta cerceve yok demektir.
+//
+// Simdilik sadece raporluyor. Otomatik yeniden init, bu okumanin uzun
+// kosuda kararli oldugu olculdukten sonra eklenecek; once olc, sonra karar.
+static void panelHealthTick(uint32_t now)
+{
+  if (now - lastPanelCheckMs < PANEL_CHECK_INTERVAL_MS) {
+    return;
+  }
+  if (uxQueueMessagesWaiting(freeBufs) != DECODE_BUF_COUNT) {
+    return;
+  }
+  lastPanelCheckMs = now;
+
+  const PanelHealth h = panelReadHealth(tft);
+  const bool ok = panelHealthy(h);
+  if (ok && panelWasHealthy) {
+    // Degisiklik yoksa tek satir yeter, log bogulmasin.
+    logPrintf("panel TAMAM  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
+              h.power, h.pixfmt, h.selfdiag);
+    return;
+  }
+  logPrintf("panel %s  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
+            ok ? "TOPARLANDI" : "BOZUK", h.power, h.pixfmt, h.selfdiag);
+  panelWasHealthy = ok;
+}
+
 static void drawSplash()
 {
   tft.fillScreen(COLOR_BACKGROUND);
@@ -515,6 +610,9 @@ void setup()
   tft.init();
   tft.setRotation(DISPLAY_ROTATION);
 
+  logPanelStatus("init sonrasi");
+  logPixelRoundtrip();
+
   // Tamponlar PSRAM'de. Olcum dahili SRAM ile arasindaki farkin yuzde 2
   // oldugunu gosterdi, SRAM daha degerli bir kaynak.
   payloadBuf = (uint8_t *)heap_caps_malloc(PAYLOAD_CAP, MALLOC_CAP_SPIRAM);
@@ -582,6 +680,8 @@ void loop()
   }
 
   framer.poll(millis());
+
+  panelHealthTick(millis());
 
   // PC gitti mi. Tek olcut: belirli sure hicbir gecerli mesaj gelmemesi.
   //

@@ -30,15 +30,33 @@
 // ---------------------------------------------------------------------------
 // Pinler
 // ---------------------------------------------------------------------------
-// Ekran SPI. MISO baglanmiyor, ekrandan geri okuma yapilmiyor.
+// Ekran SPI. MISO bagli, ekrandan geri okuma yapilabiliyor.
 #define PIN_TFT_CS    TFT_CS    // GPIO 10
 #define PIN_TFT_RST   TFT_RST   // GPIO 9
 #define PIN_TFT_DC    TFT_DC    // GPIO 14
 #define PIN_TFT_MOSI  TFT_MOSI  // GPIO 11
+#define PIN_TFT_MISO  TFT_MISO  // GPIO 13, SPI2 MISO'sunun IOMUX pini
 #define PIN_TFT_SCLK  TFT_SCLK  // GPIO 12
 
 // Arka isik. TFT_eSPI'ye birakilmadi, LEDC ile PWM surulyor.
 #define PIN_TFT_BL    21
+
+// ---------------------------------------------------------------------------
+// Panel sagligi (MISO uzerinden geri okuma)
+// ---------------------------------------------------------------------------
+// Degerler tahmin degil, bu panelde olculdu: init sonrasi RDDPM 0x9C,
+// RDDCOLMOD 0x05, RDDSDR 0xC0. Ayrintisi docs/measurements.md icinde.
+//
+// RDDPM'de sadece uc bit karara giriyor: D4 uyku disi, D3 normal kip,
+// D2 ekran acik. Booster (D7), idle (D6) ve kismi kip (D5) bitleri
+// kontrolden bilerek disarida, cunku normal calismada da degisebiliyorlar.
+#define PANEL_PM_MASK           0x1C
+#define PANEL_PM_EXPECTED       0x1C
+#define PANEL_COLMOD_EXPECTED   0x05
+
+// Saglik okumasi araligi. Okuma yavas (5 MHz) ve panel init'ini kaybetmek
+// nadir bir olay; sik sormanin degeri yok.
+#define PANEL_CHECK_INTERVAL_MS 5000
 
 // Test butonu. Iki bacakli mekanik switch: bir bacak bu pine, oteki GND'ye.
 // Dahili pull-up kullaniliyor, basilinca LOW okunuyor, harici direnc yok.

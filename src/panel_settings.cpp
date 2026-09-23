@@ -1,5 +1,7 @@
 #include "panel_settings.h"
 
+#include "pins.h"
+
 #include <TFT_eSPI.h>
 
 // VCOM ofseti. Titremeye en cok etki eden ayar.
@@ -84,4 +86,58 @@ void panelApplyAll(TFT_eSPI &tft)
   for (uint8_t i = 0; i < panelParamCount; i++) {
     panelApply(tft, panelParams[i]);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Geri okuma
+// ---------------------------------------------------------------------------
+// ILI9341 okuma komutlari. Adlar veri sayfasindaki kisaltmalar.
+static const uint8_t CMD_RDDID   = 0x04;
+static const uint8_t CMD_RDDPM   = 0x0A;
+static const uint8_t CMD_RDDMAD  = 0x0B;
+static const uint8_t CMD_RDDCOL  = 0x0C;
+static const uint8_t CMD_RDDIM   = 0x0D;
+static const uint8_t CMD_RDDSM   = 0x0E;
+static const uint8_t CMD_RDDSDR  = 0x0F;
+static const uint8_t CMD_RDID4   = 0xD3;
+
+PanelStatus panelReadStatus(TFT_eSPI &tft)
+{
+  PanelStatus s = {};
+  for (uint8_t i = 0; i < 4; i++) {
+    s.id[i]  = tft.readcommand8(CMD_RDDID, i);
+    s.id4[i] = tft.readcommand8(CMD_RDID4, i);
+  }
+  s.power    = tft.readcommand8(CMD_RDDPM, 0);
+  s.madctl   = tft.readcommand8(CMD_RDDMAD, 0);
+  s.pixfmt   = tft.readcommand8(CMD_RDDCOL, 0);
+  s.imgfmt   = tft.readcommand8(CMD_RDDIM, 0);
+  s.signal   = tft.readcommand8(CMD_RDDSM, 0);
+  s.selfdiag = tft.readcommand8(CMD_RDDSDR, 0);
+  return s;
+}
+
+PanelHealth panelReadHealth(TFT_eSPI &tft)
+{
+  PanelHealth h = {};
+  h.power    = tft.readcommand8(CMD_RDDPM, 0);
+  h.pixfmt   = tft.readcommand8(CMD_RDDCOL, 0);
+  h.selfdiag = tft.readcommand8(CMD_RDDSDR, 0);
+  return h;
+}
+
+bool panelHealthy(const PanelHealth &h)
+{
+  // Guc modunda sadece anlamli bitlere bakiliyor: uyku disi, normal kip,
+  // ekran acik. Booster ve idle bitleri karara girmiyor.
+  if ((h.power & PANEL_PM_MASK) != PANEL_PM_EXPECTED) {
+    return false;
+  }
+  return h.pixfmt == PANEL_COLMOD_EXPECTED;
+}
+
+uint16_t panelPixelRoundtrip(TFT_eSPI &tft, int32_t x, int32_t y, uint16_t color)
+{
+  tft.drawPixel(x, y, color);
+  return tft.readPixel(x, y);
 }
