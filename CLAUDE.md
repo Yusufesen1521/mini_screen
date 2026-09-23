@@ -7,9 +7,17 @@ Su anki asama: **Faz 2, sekiz kriterin altisi kapali.** Faz 0 ve Faz 1
 bitti. PC kodu `pc/` altinda Rust ile, ayrintisi `pc/README.md`.
 
 **Devam ederken once `plans.md` icindeki "Faz 2'de kalan is" bolumunu
-oku.** Orada kalan uc is ve bekleyen panel gorus acisi konusu tek tek
-yazili. Siradaki is seyrek ACK zaman asiminin sebebini bulmak; baglantiya
-tanilama eklendi ama olayi yakalayacak uzun kosu henuz yapilmadi.
+oku.** Orada yapilis sirasi tablo halinde yazili.
+
+**Siradaki is: goruntu ayarlari.** Renk, font, sonra gerekirse gama.
+Panelde yazilar karsidan bakinca sonuk kaliyor; olculen sebep
+`COLOR_DIM_TEXT` ve PC'deki `TEXT_DIM` / `TEXT_FAINT` tonlarinin orta
+gri olmasi. "Kaldigimiz yerden devam" ya da "simdi neredeyiz" dendiginde
+bu isten baslanacak.
+
+Ondan sonra sirasiyla: seyrek ACK zaman asiminin sebebi, 24 saat
+kesintisiz kosu, macOS ve Linux'ta elle dogrulama. Sira kullaniciyla
+2026-09-24'te kararlastirildi, kendi basina degistirme.
 
 Calisma kurali: bir faz, cikis kriterlerinin tamami tek tek dogrulanmadan
 bitmis sayilmaz ve sonraki faza gecilmez. Olcum gerektiren kriterlerde gercek

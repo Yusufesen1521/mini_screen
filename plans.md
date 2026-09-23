@@ -413,8 +413,51 @@ disi).
 
 ### Faz 2'de kalan is
 
-Faz 2'nin sekiz kriterinden **altisi** kapandi. Kalanlar ve tam olarak
-ne gerektigi:
+Faz 2'nin sekiz kriterinden **altisi** kapandi.
+
+**Yapilis sirasi, 2026-09-24'te kullaniciyla kararlastirildi:**
+
+| Sira | Is | Neden burada |
+|---|---|---|
+| 0 | Goruntu ayarlari: renk, font, gama | Ilk is bu. Her gun goze carpan sey, ve digerleri beklerken kullanilabilirligi dusuruyor |
+| 1 | Seyrek ACK zaman asimi | Cikis kriteri, ve 2'nin on sarti |
+| 2 | 24 saat kesintisiz kosu | Cikis kriteri, 1 cozulmeden baslatmanin anlami yok |
+| 3 | macOS ve Linux'ta gercek calisma | Cikis kriteri, digerlerinden bagimsiz |
+
+**0. Goruntu ayarlari** (siradaki is)
+
+Cikis kriteri degil, ama kriterlerin onune alindi: panelde yazilar
+karsidan bakinca sonuk kaliyor, yandan bakinca okunuyor.
+
+Olculen sebep: `COLOR_DIM_TEXT` degeri `0x7BEF`, yani RGB
+**(123, 126, 123)**, siyah zemin uzerinde tam orta gri. TN panelde aciya
+gore en kararsiz davranan ton budur. PC tarafinda da ayni sorun var:
+`theme::TEXT_DIM` (124, 135, 152) ve `theme::TEXT_FAINT` (86, 95, 110).
+
+Yapilacaklar, bu sirayla:
+
+1. **Renk ve font.** Bedava, aninda, geri alinabilir ve donanima
+   dokunmadan `mscreen preview` ile PNG uzerinde dogrulanabiliyor.
+   - `COLOR_DIM_TEXT`, `theme::TEXT_DIM` ve `theme::TEXT_FAINT`
+     tonlarini belirgin sekilde yukari cek
+   - Okunmasi sart olan seyler (bekleme ekrani ipucu gibi) duz beyaz
+   - **Kalin font ekle.** Su an sadece Segoe UI Regular yuklu, ucuncu
+     bir `FontKind` olarak `segoeuib.ttf`, Linux'ta `DejaVuSans-Bold`
+   - Kucuk etiketleri bir punto buyut; TN'de kalinliktan cok boyut
+     kazandiriyor
+   - **Kisit:** parlaklik 180 ustunde `rgb_test2.gif` klibinde titreme
+     olculmustu. O olcum genis parlak alanlarla ilgiliydi, ince yazi
+     baska bir yuk. Riskli gorulmuyor ama uygulandiktan sonra gozle
+     dogrulanacak.
+2. **Gama (E0/E1) taramasi**, renk ve font yetmezse. ILI9341'de kontrast
+   registeri yok, karsiligi gama ve `panel_settings.cpp` gamayi hic
+   taramamis. Panel tarafinda denenmemis tek gercek kaldirac.
+
+**VCOM tekrar taranmayacak.** Faz 1.5b'de bastan sona tarandi, iki kez
+dogrulandi, `CLAUDE.md` bu konuyu tekrar acmamayi soyluyor.
+
+Beklenti dururken soylensin: hicbiri TN paneli IPS yapmaz. Renk ve font
+isi okunabilirligi bugun kurtarir, gama bir kademe daha katar.
 
 **1. Seyrek ACK zaman asimi**
 
@@ -475,7 +518,8 @@ Konusuldu ama yapilmadi, oncelik sirasina gore:
 4. Gama kalibrasyonu. `paneltune` su an VCOM, kare hizi, tersleme ve
    guc gerilimini tariyor; **gama (E0/E1) hic denenmemis.** TN'de
    eksen disi bozulmanin dogru kolu bu. Bir kerelik kalibrasyon,
-   butona baglanacak bir sey degil.
+   butona baglanacak bir sey degil. **Artik Faz 2'nin 0. isinin ikinci
+   adimi olarak sirada**, yukaridaki "Goruntu ayarlari" bolumune bak.
 5. Parlaklik butonu. Kolay ama bu sorun icin zayif kol, ayrica plan
    4.3'un isi.
 
