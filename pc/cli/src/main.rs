@@ -340,6 +340,14 @@ fn cmd_run(
             println!("  [cihaz] {}", line);
         }
 
+        // Cihaz paneli yeniden init ettiyse ekraninda hicbir sey kalmadi.
+        // Kirli takibi sifirlanmazsa sadece degisen dikdortgenler gider
+        // ve ekranin kalani bos durur.
+        if link.take_need_full() {
+            engine.force_full();
+            println!("  [cihaz] panel yeniden init edildi, tam kare gonderiliyor");
+        }
+
         // Olcum kipinde ilk kare gittikten sonra ekrani donduruyoruz.
         if static_mode && !frozen && start.elapsed() >= Duration::from_secs(2) {
             engine.set_frozen(true);

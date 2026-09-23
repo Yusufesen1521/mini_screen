@@ -30,6 +30,8 @@ pub const MSG_ERROR: u8 = 0x84;
 pub const MSG_STATUS: u8 = 0x85;
 pub const MSG_PONG: u8 = 0x86;
 pub const MSG_LOG: u8 = 0x87;
+/// Cihaz paneli yeniden init etti, ekran icerigi kayboldu: tam kare gerek.
+pub const MSG_NEED_FULL: u8 = 0x88;
 
 pub const REGION_HDR_SIZE: usize = 10;
 pub const PIXFMT_RGB565_LE: u8 = 0x01;
@@ -55,6 +57,7 @@ pub fn msg_name(t: u8) -> &'static str {
         MSG_STATUS => "STATUS",
         MSG_PONG => "PONG",
         MSG_LOG => "LOG",
+        MSG_NEED_FULL => "NEED_FULL",
         _ => "BILINMEYEN",
     }
 }

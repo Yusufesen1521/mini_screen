@@ -61,8 +61,10 @@ static QueueHandle_t pushQueue = nullptr;   // PushJob
 static QueueHandle_t freeBufs = nullptr;    // uint8_t, bos tampon indeksi
 
 // Panel saglik kontrolu durumu. Ayrintisi panelHealthTick() basinda.
-static uint32_t lastPanelCheckMs = 0;
-static bool     panelWasHealthy  = true;
+static uint32_t lastPanelCheckMs   = 0;
+static bool     panelWasHealthy    = true;
+// Ust uste kac kurtarma denendi. Basarili okuma sifirliyor.
+static uint8_t  panelRecoveryTries = 0;
 
 static bool     connected = false;
 // Bekleme ekrani durumu ve son gecerli mesajin zamani. lastMsgMs sifir
@@ -483,6 +485,78 @@ static void logPixelRoundtrip()
 //
 // Simdilik sadece raporluyor. Otomatik yeniden init, bu okumanin uzun
 // kosuda kararli oldugu olculdukten sonra eklenecek; once olc, sonra karar.
+// Asagida tanimli, kurtarma once gelmek zorunda: kurtarma acilis
+// ekranini geri ciziyor.
+static void drawSplash();
+
+// Paneli sifirdan kurar.
+//
+// Basma gorevi ile yarisamaz: buraya sadece panelHealthTick uzerinden
+// gelinir, o da butun cozme tamponlari serbestken calisiyor. Yeni is
+// ancak loop() porttan okurken dogar, biz de o sirada loop icindeyiz.
+//
+// Init'ten sonra ekranin icerigi kayboldu. Ne yapilacagi moda bagli:
+// beklemedeysek bekleme ekrani yeniden cizilir, PC baglidaysa ondan tam
+// kare istenir, ikisi de degilse acilis ekrani geri gelir.
+static void panelRecover()
+{
+  backlightSet(BL_BRIGHTNESS_OFF);
+
+  tft.init();
+  tft.setRotation(DISPLAY_ROTATION);
+  panelApplyAll(tft);
+
+  const PanelHealth after = panelReadHealth(tft);
+  const bool ok = panelHealthy(after);
+  logPrintf("panel yeniden init: %s  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
+            ok ? "TAMAM" : "HALA BOZUK",
+            after.power, after.pixfmt, after.selfdiag);
+
+  if (standby) {
+    drawStandby();
+    backlightSet(BL_BRIGHTNESS_STANDBY);
+  } else {
+    if (!connected) {
+      drawSplash();
+    }
+    backlightSet(BL_BRIGHTNESS_DEFAULT);
+  }
+
+  // PC baglidaysa kirli takibini sifirlamasi gerekiyor: dirty tracking
+  // yuzunden sadece degisen dikdortgenler gidiyor, panel ise bombos.
+  if (connected) {
+    tft.fillScreen(COLOR_BACKGROUND);
+    sendFrame(MSG_NEED_FULL, 0, nullptr, 0);
+    logPrintf("PC'den tam kare istendi\n");
+  }
+
+  panelWasHealthy = ok;
+}
+
+// Arizayi bilerek uretmek icin. Varsayilan olarak derlenmiyor.
+//
+// Panele SWRESET gonderiyor, yani denetleyiciyi kendi acilis haline
+// donduruyor: uyku moduna giriyor, ekran kapaniyor ve piksel formati
+// varsayilana donuyor. Beyaz ekran olayinda olan seyin aynisi.
+//
+// Kullanimi, tek seferlik bir derleme ile:
+//   PLATFORMIO_BUILD_FLAGS=-DPANEL_FAULT_TEST_MS=20000 pio run -t upload
+// Acilistan 20 saniye sonra panel bozulur ve kurtarma tetiklenir.
+#ifdef PANEL_FAULT_TEST_MS
+static bool panelFaultInjected = false;
+
+static void panelFaultTest(uint32_t now)
+{
+  if (panelFaultInjected || now < PANEL_FAULT_TEST_MS) {
+    return;
+  }
+  panelFaultInjected = true;
+  logPrintf("TEST: panele SWRESET gonderiliyor, ariza uretiliyor\n");
+  tft.writecommand(0x01);
+  delay(120);
+}
+#endif
+
 static void panelHealthTick(uint32_t now)
 {
   if (now - lastPanelCheckMs < PANEL_CHECK_INTERVAL_MS) {
@@ -494,16 +568,30 @@ static void panelHealthTick(uint32_t now)
   lastPanelCheckMs = now;
 
   const PanelHealth h = panelReadHealth(tft);
-  const bool ok = panelHealthy(h);
-  if (ok && panelWasHealthy) {
-    // Degisiklik yoksa tek satir yeter, log bogulmasin.
-    logPrintf("panel TAMAM  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
-              h.power, h.pixfmt, h.selfdiag);
+  if (panelHealthy(h)) {
+    if (!panelWasHealthy) {
+      logPrintf("panel TOPARLANDI  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
+                h.power, h.pixfmt, h.selfdiag);
+      panelWasHealthy = true;
+    }
+    panelRecoveryTries = 0;
     return;
   }
-  logPrintf("panel %s  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
-            ok ? "TOPARLANDI" : "BOZUK", h.power, h.pixfmt, h.selfdiag);
-  panelWasHealthy = ok;
+
+  logPrintf("panel BOZUK  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
+            h.power, h.pixfmt, h.selfdiag);
+  panelWasHealthy = false;
+
+  if (panelRecoveryTries >= PANEL_RECOVERY_MAX_TRIES) {
+    // Denemeye devam etmek anlamsiz: init dizisi gecmiyorsa sorun
+    // yazilimda degil. Log kirletmemek icin susuyoruz, bir sonraki
+    // basarili okuma sayaci sifirlar.
+    return;
+  }
+  panelRecoveryTries++;
+  logPrintf("panel kurtarma denemesi %u/%u\n",
+            (unsigned)panelRecoveryTries, (unsigned)PANEL_RECOVERY_MAX_TRIES);
+  panelRecover();
 }
 
 static void drawSplash()
@@ -609,6 +697,11 @@ void setup()
 
   tft.init();
   tft.setRotation(DISPLAY_ROTATION);
+  // Faz 1.5b'de gozle bulunan register degerleri. tft.init() SONRASI
+  // uygulanmak zorunda, once uygulanirsa kutuphanenin init dizisi
+  // ustune yazar. Gerekcesi ve bulunma yontemi docs/measurements.md
+  // icindeki Faz 1.5b bolumunde.
+  panelApplyAll(tft);
 
   logPanelStatus("init sonrasi");
   logPixelRoundtrip();
@@ -681,6 +774,9 @@ void loop()
 
   framer.poll(millis());
 
+#ifdef PANEL_FAULT_TEST_MS
+  panelFaultTest(millis());
+#endif
   panelHealthTick(millis());
 
   // PC gitti mi. Tek olcut: belirli sure hicbir gecerli mesaj gelmemesi.

@@ -38,8 +38,22 @@ besleme gecisi (ikinci USB kablosunun takilmasi).
 
 **Yazma tarafi bu durumu hicbir zaman bildirmez**, `pushImage` sessizce
 basarili doner. Tek tespit yolu MISO uzerinden geri okuma, o yuzden
-baglandi. Su an firmware her 5 saniyede bir soruyor ve **sadece
-raporluyor**; otomatik yeniden init henuz yok.
+baglandi.
+
+**Artik otomatik kurtariliyor.** Firmware her 5 saniyede bir soruyor;
+`panelHealthy()` false donerse `tft.init()`, `setRotation` ve
+`panelApplyAll()` yeniden kosuyor, sonra moda gore ekran geri ciziliyor.
+PC baglidaysa `MSG_NEED_FULL` gonderiliyor ve PC kirli takibini sifirlayip
+tam kare yolluyor. Ust uste en fazla `PANEL_RECOVERY_MAX_TRIES` deneniyor.
+
+Ariza uretilerek dogrulandi, ayrintisi `docs/measurements.md` icinde.
+Arizayi tekrar uretmek icin:
+
+```bash
+PLATFORMIO_BUILD_FLAGS=-DPANEL_FAULT_TEST_MS=25000 pio run -t upload
+```
+
+Panele SWRESET gonderir. Varsayilan derlemede bu kod yok.
 
 **Dokunmatik YOK, olculerek dogrulandi.** Urun sayfasi dokunmatik diyordu,
 poset "touch: no" diyordu. XPT2046 hatlari (T_CS GPIO 18, T_DO GPIO 13)
@@ -56,6 +70,10 @@ Kimlik registerleri (RDDID 0x04, RDID4 0xD3) anlamsiz donuyor, bu hat
 sorunu degil: TFT_eSPI'nin 0xD9 indeks yontemi cok baytli kimlik
 komutlarinda tutmuyor. **Saglik kontrolu kimlige dayandirilmaz**, RDDPM
 ve RDDCOLMOD kullanilir.
+
+**RDDPM olmadan karar verilemez, olculdu.** Ariza uretildiginde COLMOD
+yine 0x05 okundu, yani tek basina piksel formatina bakan bir kontrol
+arizayi kacirirdi. Yakalayan RDDPM oldu: 0x9C'den 0x08'e dustu.
 
 `spi_read_frequency` 5 MHz olmak zorunda. ILI9341 RDX cevrimi en az
 150 ns, yani okuma tavani 6.6 MHz. Yukseltirsen register okumasi
@@ -122,7 +140,10 @@ ve koyu pikseller, ozellikle yuksek parlaklikta, parliyor sonuyordu.
 
 `src/panel_settings.cpp` icindeki degerler gozle bulundu ve
 `tft.init()` **sonrasinda** uygulaniyor (once uygulanirsa kutuphane
-ustune yazar):
+ustune yazar). **Dort ortamda da uygulaniyor**: protokol firmware'i uzun
+sure `panelApplyAll()` cagirmayi atlamisti, 2026-09-24'te eklendi. Panel
+kurtarmasi da yeniden uyguluyor, yoksa kurtarilan panel stok ayarlarla
+kalirdi.
 
 | Register | Secilen | Stok |
 |---|---|---|

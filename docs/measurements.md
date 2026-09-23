@@ -1325,3 +1325,78 @@ basma trafigi altinda da kararli ve yanlis alarm uretmiyor.
 Bu surum sadece **raporluyor**, otomatik yeniden init yok. Once okumanin
 kararli oldugunu olcmek gerekiyordu, olculdu. Otomatik kurtarma ayri bir
 adim.
+
+---
+
+## Faz 2: panel kurtarma, ariza uretilerek dogrulandi
+
+Tarih 2026-09-24. Onceki bolumde geri okuma eklenmisti ama sadece
+raporluyordu. Bu adimda iki is yapildi: Faz 1.5b register ayarlari
+protokol firmware'ine de girdi, ve `panelHealthy()` false donunce
+otomatik kurtarma eklendi.
+
+### Faz 1.5b ayarlari eksikti
+
+`main.cpp` `panelApplyAll()` cagirmiyordu. Yani protokol firmware'i,
+gozle bulunan VCOM ve kare hizi degerleri olmadan, TFT_eSPI'nin stok
+ILI9341 init dizisiyle kosuyordu. `gifplay` ve `paneltune` cagiriyordu.
+Eklendi, `tft.init()` sonrasina.
+
+Yan dogrulama: ayarlar uygulandiktan sonra saglik esikleri degismedi,
+RDDPM yine 0x9C ve RDDCOLMOD yine 0x05 okunuyor.
+
+### Ariza nasil uretildi
+
+Tahmin etmemek icin gercek bir ariza uretildi. Panele **SWRESET (0x01)**
+gonderildi, yani denetleyici kendi acilis haline donduruldu: uyku modu,
+ekran kapali, varsayilan ayarlar. Beyaz ekran olayinda olanin aynisi.
+
+Derleme bayragi `PANEL_FAULT_TEST_MS`, varsayilan olarak derlenmiyor:
+
+```bash
+PLATFORMIO_BUILD_FLAGS=-DPANEL_FAULT_TEST_MS=25000 pio run -t upload
+```
+
+### Sonuc
+
+Acilistan 25 saniye sonra, PC bagli ve canli cizim yaparken:
+
+```
+TEST: panele SWRESET gonderiliyor, ariza uretiliyor
+panel BOZUK  PM 0x08 COLMOD 0x05 SDR 0x00
+panel kurtarma denemesi 1/3
+panel yeniden init: TAMAM  PM 0x9C COLMOD 0x05 SDR 0xC0
+PC'den tam kare istendi
+panel yeniden init edildi, tam kare gonderiliyor
+```
+
+Son satir PC tarafindan, yani `MSG_NEED_FULL` karsiya ulasti ve
+`Engine::force_full()` calisti.
+
+**Onemli ayrinti: COLMOD ariza sirasinda da 0x05 okundu.** Yani tek
+basina piksel formatina bakan bir kontrol bu arizayi kacirirdi. Yakalayan
+RDDPM oldu: 0x9C'den 0x08'e dustu, yani uyku disi ve ekran acik bitleri
+sifirlandi. RDDSDR de 0xC0'dan 0x00'a dustu.
+
+**Cikan kural: saglik karari RDDPM olmadan verilemez.**
+
+### Kurtarma sonrasi dogrulama kosusu
+
+Ariza enjeksiyonu olmayan normal firmware ile:
+
+| Olcum | Deger |
+|---|---|
+| Sure | 120 sn |
+| Gonderilen cerceve | 388 |
+| NACK | 0 |
+| ACK zaman asimi | 0 |
+| Panel saglik uyarisi | 0 |
+
+### Acik nokta
+
+Ariza enjeksiyonlu kosuda iki ACK zaman asimi goruldu, dogrulama
+kosusunda sifir. Ikisi de kosunun sonundaki bosaltma aninda damgalandi.
+Kurtarmaya baglanmadi, cunku olay ariza aninda degil 38 saniye sonra
+oldu. Yine de akilda tutulmali: kurtarma sirasinda `tft.init()`,
+`panelApplyAll()` ve tam ekran silme `loop()` icinde calisiyor ve o sure
+boyunca porttan okuma durmus oluyor.

@@ -239,6 +239,8 @@ pub struct Link {
     abandoned: Vec<(u8, Instant)>,
     /// Cihazdan gelen LOG satirlari. Tuketen bosaltir.
     pub logs: Vec<String>,
+    /// Cihaz paneli yeniden init etti ve tam kare istedi. Tuketen siler.
+    need_full: bool,
     // Sicak yolda yeniden kullanilan tamponlar. Kare basina tahsis yok.
     frame_buf: Vec<u8>,
     region_buf: Vec<u8>,
@@ -274,6 +276,7 @@ impl Link {
             opened: Instant::now(),
             abandoned: Vec::new(),
             logs: Vec::new(),
+            need_full: false,
             frame_buf: Vec::with_capacity(p::MAX_PAYLOAD),
             region_buf: Vec::with_capacity(p::MAX_PAYLOAD),
             rle_buf: Vec::with_capacity(p::MAX_PAYLOAD),
@@ -416,6 +419,15 @@ impl Link {
                 // bir PONG doguruyor.
                 p::MSG_PONG => {
                     self.inbox.remove(i);
+                }
+                // Cihaz paneli yeniden init etti. Kirli takibi artik
+                // yalan soyluyor: cihazin ekraninda hicbir sey yok ama
+                // takipci onceki kareyi hatirliyor, yani sadece degisen
+                // dikdortgenleri gonderirdi.
+                p::MSG_NEED_FULL => {
+                    self.need_full = true;
+                    self.inbox.remove(i);
+                    progressed = true;
                 }
                 // CAPS ve STATUS bekleyen bir cagrinin mali, dokunmuyoruz.
                 p::MSG_CAPS | p::MSG_STATUS => i += 1,
@@ -633,6 +645,12 @@ impl Link {
             }
         }
         Ok(None)
+    }
+
+    /// Cihaz tam kare istedi mi. Okuyan bayragi dusurur, yani her istek
+    /// bir kez islenir.
+    pub fn take_need_full(&mut self) -> bool {
+        std::mem::take(&mut self.need_full)
     }
 
     pub fn take_logs(&mut self) -> Vec<String> {

@@ -58,6 +58,11 @@
 // nadir bir olay; sik sormanin degeri yok.
 #define PANEL_CHECK_INTERVAL_MS 5000
 
+// Ust uste en fazla kac kurtarma denenir. Init dizisi gecmiyorsa sorun
+// yazilimda degildir; sonsuza kadar denemek logu kirletir ve her
+// denemede ekran kirpar. Basarili bir okuma sayaci sifirlar.
+#define PANEL_RECOVERY_MAX_TRIES 3
+
 // Test butonu. Iki bacakli mekanik switch: bir bacak bu pine, oteki GND'ye.
 // Dahili pull-up kullaniliyor, basilinca LOW okunuyor, harici direnc yok.
 //

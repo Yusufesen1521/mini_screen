@@ -105,9 +105,20 @@ kadar patlama hatalarini yakaliyor, rastgele veride hata kacirma olasiligi
 | `0x85` | STATUS | Sayaclar |
 | `0x86` | PONG | PING'deki SEQ yankilanir |
 | `0x87` | LOG | UTF-8 log metni, satir sonlari dahil |
+| `0x88` | NEED_FULL | Bos. Cihaz paneli yeniden init etti, tam kare gerekiyor |
 
 `0x90` girdi olaylari icin rezerve (rotary encoder ve butonlar, Faz 3 ve
 sonrasi).
+
+**NEED_FULL neden var:** cihaz paneli yeniden init edebiliyor (panel
+init'ini kaybederse, gerekcesi `CLAUDE.md` icinde). Init'ten sonra
+denetleyicinin cerceve bellegi bos, ama PC'nin kirli takibi bunu bilmiyor
+ve onceki kareyi hatirladigi icin sadece degisen dikdortgenleri
+gonderirdi; ekranin kalani bos kalirdi. Bu mesaj PC'ye takibi sifirlamasini
+soyluyor.
+
+Mesaj **additive**: eski PC surumleri tanimadigi tipi sessizce atiyor, o
+yuzden `PROTO_VERSION` artmadi. Cevap beklenmiyor, ACK istenmiyor.
 
 **LOG neden protokolde:** cihazin log hatti UART0 uzerinde. Kartin UART
 kopru portu takili degilse hicbir tanilama gorunmez. LOG mesaji sayesinde

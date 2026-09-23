@@ -58,6 +58,14 @@
 // gonderilir.
 #define MSG_LOG                 0x87
 
+// Cihaz paneli yeniden init etti ve ekranin icerigi kayboldu. PC'nin
+// kirli takibini sifirlayip tam kare gondermesi gerekiyor; aksi halde
+// sadece degisen dikdortgenler gider ve ekranin kalani cop kalir.
+//
+// Additive bir tip: eski PC surumleri bunu tanimaz, tanimadigi mesaji
+// sessizce atar. Bu yuzden PROTO_VERSION artmadi.
+#define MSG_NEED_FULL           0x88
+
 // ---------------------------------------------------------------------------
 // Hata kodlari
 // ---------------------------------------------------------------------------
