@@ -46,8 +46,40 @@ baglandi.
 PC baglidaysa `MSG_NEED_FULL` gonderiliyor ve PC kirli takibini sifirlayip
 tam kare yolluyor. Ust uste en fazla `PANEL_RECOVERY_MAX_TRIES` deneniyor.
 
+**Ama ikinci bir beyaz ekran arizasi daha var ve o yakalanamadi.**
+2026-09-24'te panel yine bembeyaz kaldi; bu sefer kontrol devredeydi ve
+paneli SAGLIKLI buldu. Olculen durum: cihaz canli ve `status` cevap
+veriyor, PC bagli ve kareler akiyor, RDDPM 0x9C ve RDDCOLMOD 0x05
+okunuyor, ekran beyaz. Kare gondermek duzeltmiyor, sadece reset
+duzeltiyor.
+
+**Bunlar elendi, tekrar denenmeyecek:**
+
+| Elenen | Nasil elendi |
+|---|---|
+| PC beyaz kare gonderiyor | 76800 pikselde 0 beyaz, kose pikseli 14,17,22 olculdu |
+| Cerceveler cihaza varmiyor | cihaz sayaclari: islenen 412, dusen 0, CRC 0, senkron 0 |
+| Basma gorevi tikanmis | 0 dusen, en uzun ACK bekleyisi 2-3 ms |
+| Firmware cokmus | boot logu temiz, panel beyazken `status` cevap veriyor |
+| Kodda beyaz cizen bir yol | her ekran `fillScreen(0x0000)` ile basliyor |
+| Kablo | kullanici kontrol etti, ayrica ayni SPI hattindan register okunabiliyor |
+| Denetleyici init'ini kaybetti | RDDPM ve RDDCOLMOD beyazken de saglikli |
+| `panelApplyAll` sebep | ilk olay bu cagri eklenmeden once yasandi, degerler de stok |
+
+**Bir daha olursa bakilacak yerler, bu sirayla:**
+
+1. Loga bak. Kontrol artik her 5 saniyede bir basiyor ve uc durumu
+   ayiriyor: `register ok piksel ok` (bellek dogru, panel surulmuyor),
+   `register ok piksel BOZUK` (yazma yolu kopuk), `register BOZUK`
+   (denetleyici init'ini kaybetti).
+2. Analog taraf: VCOM, guc kontrol registerleri, booster. RDDPM'deki
+   booster biti bir durum biti, olcum degil.
+3. Panelin 3V3 beslemesindeki gecici cokmeler.
+4. Her iki olayda da ortak olan sey: cihaz bir sure bosta beklemisti.
+
 Ariza uretilerek dogrulandi, ayrintisi `docs/measurements.md` icinde.
-Arizayi tekrar uretmek icin:
+**Not: `PANEL_FAULT_TEST_MS` bu ikinci arizayi uretmiyor**, SWRESET
+baska bir seyi taklit ediyor. Arizayi tekrar uretmek icin:
 
 ```bash
 PLATFORMIO_BUILD_FLAGS=-DPANEL_FAULT_TEST_MS=25000 pio run -t upload

@@ -1400,3 +1400,71 @@ Kurtarmaya baglanmadi, cunku olay ariza aninda degil 38 saniye sonra
 oldu. Yine de akilda tutulmali: kurtarma sirasinda `tft.init()`,
 `panelApplyAll()` ve tam ekran silme `loop()` icinde calisiyor ve o sure
 boyunca porttan okuma durmus oluyor.
+
+---
+
+## Faz 2: ikinci beyaz ekran arizasi, yakalanamadi
+
+Tarih 2026-09-24. Panel yine bembeyaz kaldi. Bu sefer geri okuma ve
+saglik kontrolu devredeydi ve **kontrol paneli saglikli buldu.**
+
+### Olculen durum
+
+| Olcum | Deger |
+|---|---|
+| Cihaz canli mi | evet, `status` cevap verdi, 412 cerceve islenmis |
+| Kontrol kosuyor mu | evet, `loop()` calisiyor |
+| RDDPM | 0x9C, yani uyku disi, normal kip, ekran acik |
+| RDDCOLMOD | 0x05, 16 bit |
+| Kareler gidiyor mu | evet, 60 sn kosuda 218 cerceve, 0 NACK |
+| Ekran | beyaz, kare akarken de beyaz |
+| Reset | duzeltiyor |
+
+Yani registerler denetleyicinin ayakta oldugunu soyluyor, kareler
+gidiyor ve onaylaniyor, ekran yine de beyaz. **Kare gondermek
+duzeltmiyor**, bu onemli: yazma yolunun ucundaki bir sey calismiyor.
+
+### SWRESET arizasindan farki
+
+Bir onceki bolumde uretilen arizada RDDPM 0x9C'den 0x08'e dusuyordu ve
+kontrol yakaliyordu. Burada RDDPM hic degismedi. **Iki ayri ariza.**
+`PANEL_FAULT_TEST_MS` bu ikincisini uretmiyor.
+
+### Elenenler
+
+Hepsi olcumle elendi, tekrar denenmeyecek:
+
+- PC beyaz kare gondermiyor: 76800 pikselde 0 beyaz, kose pikseli
+  RGB 14,17,22 olculdu
+- Cerceveler cihaza saglam variyor: dusen 0, hdr CRC 0, payload CRC 0,
+  senkron 0
+- Basma gorevi tikanmamis: en uzun ACK bekleyisi 2-3 ms
+- Firmware cokmemis: panel beyazken cihaz `status` cevapliyor
+- Kodda beyaz cizen yol yok: her ekran `fillScreen(0x0000)` ile basliyor
+- Kablo degil: kullanici kontrol etti, ustelik ayni SPI hattindan
+  register okunabiliyor
+- `panelApplyAll` degil: ilk olay o cagri eklenmeden once yasandi ve
+  yazilan degerler zaten stok (tersleme 0x02, guc 0x23)
+
+### Eklenen tanilama
+
+Kontrole cerceve bellegi sinamasi eklendi: kosedeki pikselin eski degeri
+okunuyor, iki farkli renk yazilip geri okunuyor, sonra eski deger geri
+yaziliyor. Ekranda iz birakmiyor.
+
+Log artik her turda basiyor. Onceden sadece degisiklikte basiyordu ve
+panel beyazken log bombostu; o sessizlik "panel saglikli" ile "cihaz
+olmus" arasinda ayrim yapmiyordu.
+
+Bir sonraki olayda log uc durumu ayiracak:
+
+| Log | Anlam |
+|---|---|
+| `register ok piksel ok` | bellek dogru, panel surulmuyor, analog tarafa bak |
+| `register ok piksel BOZUK` | yazma yolu kopuk |
+| `register BOZUK` | denetleyici init'ini kaybetti, SWRESET arizasinin ayni |
+
+### Gozlenen ortak nokta
+
+Iki olayda da cihaz bir sure bosta beklemisti ve ariza o beklemeden
+sonra fark edildi. Ornek sayisi iki, yani bu bir ipucu, bulgu degil.
