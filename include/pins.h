@@ -63,6 +63,19 @@
 // denemede ekran kirpar. Basarili bir okuma sayaci sifirlar.
 #define PANEL_RECOVERY_MAX_TRIES 3
 
+// Cerceve bellegi sinamasi. Register okumasi denetleyicinin ayakta
+// oldugunu gosteriyor ama bellegin icerigi hakkinda hicbir sey
+// soylemiyor: olculdu, panel bembeyazken RDDPM ve RDDCOLMOD hala
+// saglikli okunuyordu. Bu yuzden her turda bir piksel gidip geliyor.
+//
+// Kose secildi: acilis ekraninin kose isaretinin yeri, yani orada zaten
+// tek piksellik bir sey var ve eski deger geri yaziliyor.
+#define PANEL_PROBE_X       0
+#define PANEL_PROBE_Y       0
+// Iki farkli deger: hatta takili kalan tek bir deger sansla gecmesin.
+#define PANEL_PROBE_A       0xF81F
+#define PANEL_PROBE_B       0x07E0
+
 // Test butonu. Iki bacakli mekanik switch: bir bacak bu pine, oteki GND'ye.
 // Dahili pull-up kullaniliyor, basilinca LOW okunuyor, harici direnc yok.
 //

@@ -568,24 +568,28 @@ static void panelHealthTick(uint32_t now)
   lastPanelCheckMs = now;
 
   const PanelHealth h = panelReadHealth(tft);
-  if (panelHealthy(h)) {
-    if (!panelWasHealthy) {
-      logPrintf("panel TOPARLANDI  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
-                h.power, h.pixfmt, h.selfdiag);
-      panelWasHealthy = true;
-    }
+  const bool regsOk = panelHealthy(h);
+  const bool pixOk = panelPixelCheck(tft, PANEL_PROBE_X, PANEL_PROBE_Y);
+  const bool ok = regsOk && pixOk;
+
+  // **Her turda basiliyor, sessizlik birakilmiyor.** Once sadece
+  // degisiklikte basiliyordu ve panel beyazken log bombostu; o sessizlik
+  // "panel saglikli" ile "cihaz olmus" arasinda ayrim yapmiyordu ve
+  // tanilamada zaman kaybettirdi.
+  logPrintf("panel %s  PM 0x%02X COLMOD 0x%02X SDR 0x%02X  register %s piksel %s\n",
+            ok ? "TAMAM" : "BOZUK", h.power, h.pixfmt, h.selfdiag,
+            regsOk ? "ok" : "BOZUK", pixOk ? "ok" : "BOZUK");
+
+  if (ok) {
+    panelWasHealthy = true;
     panelRecoveryTries = 0;
     return;
   }
-
-  logPrintf("panel BOZUK  PM 0x%02X COLMOD 0x%02X SDR 0x%02X\n",
-            h.power, h.pixfmt, h.selfdiag);
   panelWasHealthy = false;
 
   if (panelRecoveryTries >= PANEL_RECOVERY_MAX_TRIES) {
     // Denemeye devam etmek anlamsiz: init dizisi gecmiyorsa sorun
-    // yazilimda degil. Log kirletmemek icin susuyoruz, bir sonraki
-    // basarili okuma sayaci sifirlar.
+    // yazilimda degil. Bir sonraki basarili okuma sayaci sifirlar.
     return;
   }
   panelRecoveryTries++;

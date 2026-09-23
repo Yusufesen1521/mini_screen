@@ -84,6 +84,17 @@ PanelHealth panelReadHealth(TFT_eSPI &tft);
 // RDDCOLMOD 0x05, RDDSDR 0xC0 okunuyor. Olcum docs/measurements.md icinde.
 bool panelHealthy(const PanelHealth &h);
 
+// Cerceve belleginin gercekten yazilip okunabildigini sinar.
+//
+// **Neden register okumasi yetmiyor:** olculdu. Panel bembeyazken RDDPM
+// 0x9C ve RDDCOLMOD 0x05 okunmaya devam etti, yani denetleyici "uyku
+// disiyim, ekranim acik, 16 bitim" diyordu. Registerler denetleyicinin
+// ayakta oldugunu gosteriyor, bellegin icerigini degil.
+//
+// Test pikselinin eski degeri once okunup sonra geri yaziliyor, yani
+// ekranda iz kalmiyor.
+bool panelPixelCheck(TFT_eSPI &tft, int32_t x, int32_t y);
+
 // Tek pikselin gidip geri gelmesi. Register okumasi hattin calistigini
 // gosterir, bu ise cerceve belleginin gercekten yazildigini gosterir.
 // Yazilan renk `color`, donen degerse okunan.

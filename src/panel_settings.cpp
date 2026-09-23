@@ -136,6 +136,24 @@ bool panelHealthy(const PanelHealth &h)
   return h.pixfmt == PANEL_COLMOD_EXPECTED;
 }
 
+bool panelPixelCheck(TFT_eSPI &tft, int32_t x, int32_t y)
+{
+  static const uint16_t kProbe[] = { PANEL_PROBE_A, PANEL_PROBE_B };
+  const uint16_t saved = tft.readPixel(x, y);
+
+  bool ok = true;
+  for (uint8_t i = 0; i < 2; i++) {
+    tft.drawPixel(x, y, kProbe[i]);
+    if (tft.readPixel(x, y) != kProbe[i]) {
+      ok = false;
+      break;
+    }
+  }
+
+  tft.drawPixel(x, y, saved);
+  return ok;
+}
+
 uint16_t panelPixelRoundtrip(TFT_eSPI &tft, int32_t x, int32_t y, uint16_t color)
 {
   tft.drawPixel(x, y, color);
