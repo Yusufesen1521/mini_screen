@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 
-use mini_screen_core::engine::{default_layout, Engine};
+use mini_screen_core::engine::{clock_layout, gauges_layout, hwmon_layout, Engine, Slot};
 use mini_screen_core::render::Rect;
 use mini_screen_core::transport::{find_ports, Link, OPEN_RETRY_TIMEOUT};
 use mini_screen_core::widget;
@@ -27,6 +27,7 @@ fn main() -> anyhow::Result<()> {
     let seconds: u64 = flag_value(&args, "--seconds")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    let layout = flag_value(&args, "--layout");
 
     match cmd {
         "ports" => cmd_ports(),
@@ -34,16 +35,37 @@ fn main() -> anyhow::Result<()> {
         "status" => cmd_status(port.as_deref()),
         "widgets" => cmd_widgets(),
         "sensors" => cmd_sensors(args.iter().any(|a| a == "--dump")),
-        "preview" => cmd_preview(args.get(2).map(|s| s.as_str()).unwrap_or("preview.png")),
+        "preview" => cmd_preview(
+            args.get(2)
+                .filter(|a| !a.starts_with("--"))
+                .map(|s| s.as_str())
+                .unwrap_or("preview.png"),
+            layout.as_deref(),
+        ),
         "run" => cmd_run(
             port.as_deref(),
             seconds,
             args.iter().any(|a| a == "--static"),
+            layout.as_deref(),
         ),
         _ => {
             print_help();
             Ok(())
         }
+    }
+}
+
+/// Ada gore yerlesim secer. Bilinmeyen ad sessizce varsayilana dusmez,
+/// cunku yanlis yazilan bayrak fark edilmeden calismaya devam ederdi.
+fn pick_layout(name: Option<&str>, width: u16, height: u16) -> anyhow::Result<Vec<Slot>> {
+    match name {
+        None | Some("hwmon") => Ok(hwmon_layout(width, height)),
+        Some("gauges") => Ok(gauges_layout(width, height)),
+        Some("clock") => Ok(clock_layout(width, height)),
+        Some(other) => anyhow::bail!(
+            "bilinmeyen yerlesim: {}. Secenekler: hwmon (varsayilan), gauges, clock",
+            other
+        ),
     }
 }
 
@@ -134,6 +156,16 @@ fn cmd_sensors(dump: bool) -> anyhow::Result<()> {
             for (n, v, max) in entries {
                 println!("  {:<42} {:<14} ust sinir {}", n, v, max);
             }
+            let gpus = afterburner::AfterburnerSource::gpu_names();
+            println!();
+            if gpus.is_empty() {
+                println!("GPU adi okunamadi.");
+            } else {
+                println!("GPU adlari:");
+                for g in gpus {
+                    println!("  {}", g);
+                }
+            }
         }
         return Ok(());
     }
@@ -160,6 +192,9 @@ fn cmd_sensors(dump: bool) -> anyhow::Result<()> {
     row("GPU", v.gpu_percent.map(|x| format!("{:.1}%", x)));
     row("GPU sicaklik", v.gpu_temp_c.map(|x| format!("{:.1} C", x)));
     row("VRAM", pair(v.gpu_mem_used, v.gpu_mem_total));
+    row("CPU adi", v.cpu_name.clone());
+    row("GPU adi", v.gpu_name.clone());
+    row("yerel IP", v.local_ip.clone());
     let _ = Snapshot::default();
     Ok(())
 }
@@ -184,10 +219,10 @@ fn pair(used: Option<u64>, total: Option<u64>) -> Option<String> {
 }
 
 /// Cihaz olmadan bir kare cizer. Tasarimi gozle kontrol etmek icin.
-fn cmd_preview(path: &str) -> anyhow::Result<()> {
+fn cmd_preview(path: &str, layout_name: Option<&str>) -> anyhow::Result<()> {
     use mini_screen_core::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
-    let layout = default_layout(SCREEN_WIDTH, SCREEN_HEIGHT);
+    let layout = pick_layout(layout_name, SCREEN_WIDTH, SCREEN_HEIGHT)?;
     let mut engine = Engine::new(SCREEN_WIDTH, SCREEN_HEIGHT, &layout)?;
     if !engine.has_font() {
         println!("UYARI: sistem fontu bulunamadi, metin cizilmeyecek.");
@@ -250,7 +285,12 @@ fn cmd_status(port: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Result<()> {
+fn cmd_run(
+    port: Option<&str>,
+    seconds: u64,
+    static_mode: bool,
+    layout_name: Option<&str>,
+) -> anyhow::Result<()> {
     let mut link = Link::open_retry(port, OPEN_RETRY_TIMEOUT)?;
     let caps = link.handshake()?;
     let _ = link.take_logs();
@@ -259,7 +299,7 @@ fn cmd_run(port: Option<&str>, seconds: u64, static_mode: bool) -> anyhow::Resul
         caps.width, caps.height, caps.rx_slots
     );
 
-    let layout = default_layout(caps.width, caps.height);
+    let layout = pick_layout(layout_name, caps.width, caps.height)?;
     let mut engine = Engine::new(caps.width, caps.height, &layout)?;
     if !engine.has_font() {
         // Sessizce bos ekran gostermek hatayi gizler.

@@ -23,8 +23,20 @@ pub mod system;
 ///
 /// Alanlarin hepsi `Option`. `None` demek "bu makinede bu deger yok ya
 /// da henuz okunmadi" demek, hata demek degil.
-#[derive(Debug, Default, Clone, Copy)]
+///
+/// **Bu yapi `Copy` degil**, cunku isim alanlari `String`. Motor her
+/// turda bir kopya aliyor; iki kisa isim klonlamak kare basina olculebilir
+/// bir maliyet degil, isimleri sabit boyutlu diziye sikistirmak ise
+/// okunurlugu bedava kaybettirirdi.
+#[derive(Debug, Default, Clone)]
 pub struct Snapshot {
+    /// Islemcinin uretici adi, ham haliyle. Kisaltma cizim tarafinin isi.
+    pub cpu_name: Option<String>,
+    /// Ekran kartinin adi, ham haliyle.
+    pub gpu_name: Option<String>,
+    /// Bu makinenin yerel agdaki IPv4 adresi.
+    pub local_ip: Option<String>,
+
     pub cpu_percent: Option<f32>,
     pub cpu_temp_c: Option<f32>,
     pub cpu_cores: Option<usize>,
@@ -172,6 +184,9 @@ mod tests {
         assert!(s.cpu_percent.is_none());
         assert!(s.gpu_percent.is_none());
         assert!(s.mem_percent().is_none());
+        assert!(s.cpu_name.is_none());
+        assert!(s.gpu_name.is_none());
+        assert!(s.local_ip.is_none());
     }
 
     /// Kaynaklarin yoklanmasi cokmemeli, hicbiri calismasa bile.

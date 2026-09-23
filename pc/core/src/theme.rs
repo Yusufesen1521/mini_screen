@@ -55,3 +55,34 @@ pub const SIZE_DETAIL: f32 = 11.0;
 /// Cubuk yuksekligi ve sol kenari. Deger sutunu bittigi yerde basliyor.
 pub const BAR_H: u16 = 7;
 pub const BAR_X: u16 = 150;
+
+// ---------------------------------------------------------------------------
+// Donanim izleme paneli (`hwmon`).
+//
+// Bu blok lopaka.app uzerinde cizilen tasarimdan geliyor. Tasarim 480x320
+// idi, bizim panel 320x240; olculer yeniden yerlesimle uyarlandi, renkler
+// oldugu gibi alindi. Ayrintisi `widgets/hwmon.rs` basinda.
+// ---------------------------------------------------------------------------
+
+/// Tasarimin krom rengi: ayiricilar, ust serit ve etiket rozetleri.
+pub const HW_ACCENT: Color = Color::rgb(247, 65, 49);
+/// Gosterge halkasinin bos kismi. Tasarimdaki gri.
+pub const HW_TRACK: Color = Color::rgb(115, 117, 115);
+/// CPU sicaklik halkasi. Tasarimdaki mavi.
+pub const HW_CPU_ARC: Color = Color::rgb(33, 150, 247);
+/// GPU sicaklik halkasi.
+///
+/// **Tasarimdan sapiyor.** Tasarim burada krom rengiyle ayni kirmiziyi
+/// kullaniyordu; kirmizi ayni zamanda "sicak" isareti oldugu icin normal
+/// sicaklikta yaniltici duruyor. Tema paletindeki GPU rengi kullaniliyor.
+/// Tasarimin orijinaline donmek icin bu sabiti `HW_ACCENT` yap.
+pub const HW_GPU_ARC: Color = Color::rgb(80, 210, 180);
+
+/// Sicaklik halkasinin kapsadigi aralik. Bu araligin disi kirpilir.
+///
+/// Alt sinir oda sicakligi degil bosta calisan bir parcanin tipik
+/// sicakligi: 20 C'den baslatmak halkayi surekli dolu gosteriyordu.
+pub const TEMP_MIN_C: f32 = 30.0;
+pub const TEMP_MAX_C: f32 = 100.0;
+/// Bu sicakligin ustunde halka `HOT` rengine doner.
+pub const TEMP_HOT_C: f32 = 80.0;

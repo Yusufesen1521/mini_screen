@@ -40,10 +40,34 @@ VS 18 kurulumu tamamlanirsa bu betige gerek kalmaz.
 mscreen ports     # cihaz portlarini listeler
 mscreen hello     # el sikisir, cihaz yeteneklerini basar
 mscreen status    # cihaz sayaclarini okur
+mscreen widgets   # kayitli widget turlerini listeler
+mscreen sensors   # sensor kaynaklarini yoklar ve okur
 ```
 
 `--port <ad>` ile port elle verilebilir, verilmezse Espressif VID'i
 (0x303A) ile aranir.
+
+### Yerlesim secimi
+
+`run` ve `preview` komutlari `--layout` aliyor:
+
+| Ad | Ne cizer |
+|---|---|
+| `hwmon` | **Varsayilan.** Donanim izleme paneli: IP seridi, CPU ve GPU sicaklik halkalari, alt seritte doluluk cubuklari. |
+| `gauges` | Onceki varsayilan: ustte saat, altinda halka gostergeler. |
+| `clock` | Sadece saat ve calisma suresi. Sensorsuz makine icin. |
+
+```bash
+mscreen run                              # hwmon
+mscreen preview out.png --layout gauges  # cihazsiz, PNG olarak
+```
+
+Bilinmeyen bir ad sessizce varsayilana dusmez, hata verir: yanlis yazilan
+bayrak fark edilmeden calismaya devam ederdi.
+
+`hwmon` tasarimi lopaka.app uzerinde 480x320 icin cizildi ve 320x240'a
+yeniden yerlestirildi. Ayrintisi ve tasarimdan sapmalar
+`core/src/widgets/hwmon.rs` dosyasinin basinda.
 
 ## Bilinen davranis
 

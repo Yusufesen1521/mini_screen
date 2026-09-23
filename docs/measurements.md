@@ -1216,3 +1216,43 @@ Regresyon testi eklendi: `baska_kaynagin_sicakligi_silinmiyor`.
 **Not:** "eksik sensor kaynagi widget'i bozmuyor" kriteri bu makinede
 kaynaklar gercekten yokken dogrulanmisti, o kanit gecerli kalir. Simdi
 tersi de gorulmus oldu: kaynak gelince satirlar kendiliginden ciziliyor.
+
+---
+
+## Faz 2: `hwmon` paneli, cihazda ilk kosu
+
+Tarih 2026-09-23. lopaka.app uzerinde 480x320 icin cizilen donanim
+izleme tasarimi 320x240'a yeniden yerlestirildi ve varsayilan yerlesim
+yapildi. Bu, cihazda kosturulan ilk olcumu.
+
+Komut: `mscreen run --seconds 90`, panel `hwmon`, Afterburner acik.
+
+| Olcum | Deger |
+|---|---|
+| Sure | 90 sn |
+| Gonderilen cerceve | 482 |
+| Toplam trafik | 187 604 bayt, yani 2.1 KB/sn |
+| Bos tur orani | yuzde 97-98 |
+| NACK | 0 |
+| ACK zaman asimi | 0 |
+| Gec gelen onay | 0 |
+| En uzun ACK bekleyisi | 3 ms |
+
+Okunan sey: **dirty tracking bu panelde de calisiyor.** Turlarin yuzde
+98'i hicbir sey gondermeden geciyor; giden sey degisen sicaklik ve
+yuzde rakamlarinin dikdortgenleri, tur basina 17-42 arasi.
+
+2.1 KB/sn, olculen baglanti tavani olan 0.20 MB/s'in binde biri. Yani
+iki kenar yumusatmali halkanin maliyeti tasima tarafinda gorunmuyor
+bile; halkanin maliyeti PC tarafindaki rasterlemede ve o da saniyede
+iki kez oluyor.
+
+90 saniye, nadir ACK olayini yakalamak icin kisa. Bu kosu panelin
+calistigini gosteriyor, o acik konuyu kapatmiyor.
+
+### Yan kanit: widget kaydi hala calisiyor
+
+`hwmon` eklendikten sonra calisma aninda basilan liste:
+`["clock", "gauges", "hwmon", "sysinfo", "uptime"]`. Widget kendini
+kaydetti, cekirdekte widget adi gecen tek satir degismedi. Faz 2'nin
+widget soyutlamasi kriteri ucuncu gercek widget ile de tuttu.

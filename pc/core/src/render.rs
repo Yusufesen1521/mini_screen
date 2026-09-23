@@ -249,6 +249,39 @@ impl Canvas {
             .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 
+    /// Tek bitlik bitmap basar. Set olan bitler `c` ile boyanir, sifir
+    /// bitler hic dokunulmaz, yani zemin gorunur kalir.
+    ///
+    /// Bit duzeni Adafruit ve TFT_eSPI `drawBitmap` ile ayni: her satir
+    /// bayt sinirinda basliyor, en anlamli bit solda. Boylece ikon
+    /// verileri tasarim araclarindan oldugu gibi alinabiliyor.
+    ///
+    /// Veri eksikse eksik kalan kisim cizilmez; bu bir hata degil,
+    /// bozuk girdi karsisinda cokmemek icin.
+    pub fn bitmap1(&mut self, data: &[u8], x: u16, y: u16, w: u16, h: u16, c: Color) {
+        let stride = w.div_ceil(8) as usize;
+        for row in 0..h {
+            let line = row as usize * stride;
+            for col in 0..w {
+                let byte = line + (col / 8) as usize;
+                let Some(bits) = data.get(byte) else { return };
+                if bits & (0x80 >> (col % 8)) == 0 {
+                    continue;
+                }
+                let (px, py) = (x + col, y + row);
+                if px >= self.width || py >= self.height {
+                    continue;
+                }
+                let o = (py as usize * self.width as usize + px as usize) * 4;
+                let d = self.pm.data_mut();
+                d[o] = c.r;
+                d[o + 1] = c.g;
+                d[o + 2] = c.b;
+                d[o + 3] = 255;
+            }
+        }
+    }
+
     /// Ortalanmis metin. Gosterge icindeki sayilar icin.
     pub fn text_center(&mut self, s: &str, cx: u16, y: u16, size: f32, kind: FontKind, c: Color) {
         let w = self.text_width(s, size, kind);
@@ -388,5 +421,34 @@ mod tests {
     fn sifir_olculu_dikdortgen_cokmuyor() {
         let mut c = Canvas::new(8, 4);
         c.fill_rect(Rect::new(1, 1, 0, 0), Color::rgb(255, 255, 255));
+    }
+
+    /// Set bit boyanir, sifir bit zemini birakir, en anlamli bit solda.
+    #[test]
+    fn bitmap_bit_duzeni() {
+        let mut c = Canvas::new(8, 2);
+        c.clear(Color::rgb(0, 0, 0));
+        // Ilk satirda sadece en soldaki, ikinci satirda en sagdaki.
+        c.bitmap1(&[0b1000_0000, 0b0000_0001], 0, 0, 8, 2, Color::rgb(255, 0, 0));
+        let mut buf = vec![0u16; 8 * 2];
+        c.to_rgb565(&mut buf);
+        assert_eq!(buf[0], 0xF800, "sol ust piksel boyanmali");
+        assert_eq!(buf[1], 0x0000, "yanindaki zemin kalmali");
+        assert_eq!(buf[8 + 7], 0xF800, "ikinci satirin sagi boyanmali");
+        assert_eq!(buf[8], 0x0000, "ikinci satirin solu zemin kalmali");
+    }
+
+    /// Eksik veri cokmemeli, kalan kisim cizilmemeli.
+    #[test]
+    fn eksik_bitmap_verisi_cokmuyor() {
+        let mut c = Canvas::new(8, 4);
+        c.bitmap1(&[0xFF], 0, 0, 8, 4, Color::rgb(255, 255, 255));
+    }
+
+    /// Ekran disina tasan bitmap kirpilmali.
+    #[test]
+    fn bitmap_tasmasi_kirpiliyor() {
+        let mut c = Canvas::new(8, 4);
+        c.bitmap1(&[0xFF; 8], 6, 2, 8, 8, Color::rgb(255, 255, 255));
     }
 }

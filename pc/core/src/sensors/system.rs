@@ -23,8 +23,15 @@ const SAMPLE_INTERVAL: Duration = Duration::from_millis(1000);
 /// CPU sicakligi icin aranan bilesen adlari, sirayla.
 const CPU_TEMP_LABELS: &[&str] = &["Tctl", "Tdie", "Package id 0", "CPU", "coretemp"];
 
+/// Yerel IP ararken atlanacak arayuz ad onekleri. Sanal makine ve
+/// konteyner koprusu makinenin agdaki adresi degil; once gercek
+/// arayuzu vermek istiyoruz.
+const IGNORED_IFACE_PREFIXES: &[&str] = &["lo", "docker", "veth", "br-", "vEthernet", "VMware"];
+
 pub struct SystemSource {
     sys: System,
+    /// Islemci adi. Calisma boyunca degismiyor, bir kez okunuyor.
+    cpu_name: Option<String>,
     disks: Disks,
     networks: Networks,
     components: Components,
@@ -34,19 +41,61 @@ pub struct SystemSource {
 impl SystemSource {
     fn probe() -> Option<Box<dyn Source>> {
         let mut sys = System::new();
+        // Marka adi icin bir kez tum CPU bilgisi lazim; yuzde icin
+        // yapilan hafif tazeleme bunu doldurmuyor.
+        sys.refresh_cpu_all();
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         // Bellek toplami okunamiyorsa bu kaynak bu makinede ise yaramaz.
         if sys.total_memory() == 0 {
             return None;
         }
+        let cpu_name = sys
+            .cpus()
+            .first()
+            .map(|c| c.brand().trim().to_string())
+            .filter(|b| !b.is_empty());
         Some(Box::new(SystemSource {
             sys,
+            cpu_name,
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
             components: Components::new_with_refreshed_list(),
             last_net: None,
         }))
+    }
+
+    /// Yerel agdaki IPv4 adresi. Loopback ve baglantiyerel (169.254)
+    /// adresler elenir, sanal arayuzler geri plana atilir.
+    ///
+    /// Birden fazla aday varsa ilk gercek arayuzunki secilir. Hangi
+    /// arayuzun "dogru" oldugu genel olarak cozulemez; bu widget'ta
+    /// gosterilen bilgi, yonlendirme karari degil.
+    ///
+    /// **Burada `networks.refresh` cagrilmaz.** `sysinfo` ag sayaclarini
+    /// iki tazeleme arasindaki fark olarak veriyor; ayni turda ikinci kez
+    /// tazelemek ag hizini sifirlar. Cagiran, tazelemeden sonra cagirir.
+    fn local_ipv4(&self) -> Option<String> {
+        let mut fallback: Option<String> = None;
+        for (name, data) in self.networks.iter() {
+            let virtual_iface = IGNORED_IFACE_PREFIXES
+                .iter()
+                .any(|p| name.starts_with(p) || name.contains(p));
+            for net in data.ip_networks() {
+                let std::net::IpAddr::V4(v4) = net.addr else {
+                    continue;
+                };
+                if v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() {
+                    continue;
+                }
+                if virtual_iface {
+                    fallback.get_or_insert_with(|| v4.to_string());
+                } else {
+                    return Some(v4.to_string());
+                }
+            }
+        }
+        fallback
     }
 
     fn cpu_temperature(&mut self) -> Option<f32> {
@@ -76,6 +125,12 @@ impl Source for SystemSource {
     fn sample(&mut self, out: &mut Snapshot) {
         self.sys.refresh_cpu_usage();
         self.sys.refresh_memory();
+
+        // Isim de bir okuma: okunabildiyse yaziliyor, okunamadiysa
+        // baska kaynagin yazdigi deger korunuyor.
+        if let Some(name) = &self.cpu_name {
+            out.cpu_name = Some(name.clone());
+        }
 
         out.cpu_percent = Some(self.sys.global_cpu_usage());
         out.cpu_cores = Some(self.sys.cpus().len()).filter(|n| *n > 0);
@@ -123,6 +178,13 @@ impl Source for SystemSource {
             }
         }
         self.last_net = Some(now);
+
+        // IP adresi tazelenmis arayuz listesinden okunuyor. Sirasi
+        // onemli: `local_ipv4` kendi tazelemesini yapmiyor, gerekcesi
+        // fonksiyonun basinda.
+        if let Some(ip) = self.local_ipv4() {
+            out.local_ip = Some(ip);
+        }
     }
 }
 

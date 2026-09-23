@@ -147,8 +147,9 @@ impl Engine {
         self.sensors.poll();
         let now = Instant::now();
         // Goruntu kopyalaniyor: ctx yasarken canvas'i mut odunc almak
-        // gerekiyor ve Snapshot zaten kucuk bir Copy yapisi.
-        let snap = *self.sensors.snapshot();
+        // gerekiyor. Snapshot birkac sayi ve iki kisa isimden ibaret,
+        // klonlamasi kare basina olculebilir bir maliyet degil.
+        let snap = self.sensors.snapshot().clone();
         let ctx = self.context_with(now, &snap);
 
         let mut drew = false;
@@ -247,9 +248,22 @@ fn overlaps(a: Rect, b: Rect) -> bool {
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-/// Faz 2'nin varsayilan yerlesimi: ustte saat, altta calisma suresi.
-/// Gercek yerlesim motoru Faz 4'un isi, bu sadece bir baslangic.
+/// Varsayilan yerlesim: donanim izleme paneli.
+///
+/// Tek widget butun ekrani kapliyor, cunku `hwmon` kendi ust seridini,
+/// ayiricilarini ve alt seridini ciziyor. Gercek yerlesim motoru Faz
+/// 4'un isi, bu sadece bir baslangic.
 pub fn default_layout(width: u16, height: u16) -> Vec<Slot> {
+    hwmon_layout(width, height)
+}
+
+/// Donanim izleme paneli. `default_layout` bunu donduruyor.
+pub fn hwmon_layout(width: u16, height: u16) -> Vec<Slot> {
+    vec![Slot::new("hwmon", Rect::new(0, 0, width, height))]
+}
+
+/// Onceki varsayilan: ustte saat, altinda halka gostergeler.
+pub fn gauges_layout(width: u16, height: u16) -> Vec<Slot> {
     let header = crate::theme::HEADER_H.min(height);
     vec![
         Slot::new("clock", Rect::new(0, 0, width, header)),
@@ -274,6 +288,26 @@ mod tests {
     fn varsayilan_yerlesim_gecerli() {
         let l = default_layout(320, 240);
         assert!(Engine::new(320, 240, &l).is_ok());
+    }
+
+    #[test]
+    fn hwmon_yerlesimi_gecerli() {
+        let l = hwmon_layout(320, 240);
+        assert!(Engine::new(320, 240, &l).is_ok());
+    }
+
+    #[test]
+    fn gauges_yerlesimi_gecerli() {
+        let l = gauges_layout(320, 240);
+        assert!(Engine::new(320, 240, &l).is_ok());
+    }
+
+    /// Varsayilan yerlesim hwmon. Degistirilirse bu test uyarir.
+    #[test]
+    fn varsayilan_hwmon() {
+        let l = default_layout(320, 240);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].kind, "hwmon");
     }
 
     #[test]

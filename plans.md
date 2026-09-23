@@ -335,6 +335,22 @@ disi).
 - Eksik olcum satiri hic cizilmiyor: "N/A" ya da 0 yazilmiyor, satirin
   kendisi yok sayiliyor ve kalanlar yukari kayiyor.
 
+**2.6 Donanim izleme paneli `hwmon`** (bitti, 2026-09-23)
+- Tasarim lopaka.app uzerinde 480x320 icin cizildi, 320x240'a
+  **olceklenerek degil yeniden yerlestirilerek** uyarlandi: iki olcunun
+  en-boy orani ayni degil (1.50 ve 1.33).
+- Lopaka'nin urettigi TFT_eSPI kodu cihaza gitmedi, gidemez: bagli modda
+  cizimi PC yapiyor (sabit mimari karar 1). Tasarimdan alinan sey
+  yerlesim, renkler ve uc adet 16x16 tek bit ikon.
+- Halkalar **sicakligi** gosteriyor, `theme::TEMP_MIN_C..TEMP_MAX_C`
+  araligina gore. Halkanin icinde sicaklik, altinda kullanim yuzdesi.
+- Yeni sensor alanlari: `cpu_name`, `gpu_name`, `local_ip`. CPU adi ve
+  IP `sysinfo`'dan, GPU adi Afterburner paylasimli bellegindeki GPU
+  girdilerinden. Uc platformda da anahtarsiz.
+- Yeni tuval yetenegi: `Canvas::bitmap1`, tek bit ikon basar.
+- **Varsayilan yerlesim bu oldu.** Onceki `clock` artı `gauges` ikilisi
+  `--layout gauges` ile duruyor, `--layout clock` da var.
+
 ### Cikis kriterleri
 
 - [~] Uygulama Windows ve Linux'ta derleniyor ve calisiyor; macOS'ta en

@@ -174,8 +174,9 @@ duser, bu beklenen davranis.
 
 ```bash
 cd pc && build.bat build --release
-pc/target/release/mscreen.exe run            # sinirsiz
+pc/target/release/mscreen.exe run            # sinirsiz, hwmon paneli
 pc/target/release/mscreen.exe run --seconds 60
+pc/target/release/mscreen.exe run --layout gauges  # onceki varsayilan
 pc/target/release/mscreen.exe preview out.png  # cihazsiz, tasarim kontrolu
 pc/target/release/mscreen.exe sensors          # sensor kaynaklarini yoklar
 pc/target/release/mscreen.exe sensors --dump   # Afterburner ham girdileri
@@ -187,7 +188,9 @@ tasarim. Afterburner'i kurulumcuya gommek EULA'ya tabi, dogru yaklasim
 tespit edip kullaniciyi yonlendirmek.
 
 Acikken olculdu (2026-09-20): GPU 55.0 C, CPU 64.1 C, GPU kullanimi ve
-VRAM de geliyor. **`Snapshot` kaynaklar arasinda ortak ve birikimlidir:
+VRAM de geliyor. **GPU adi da Afterburner'dan geliyor**, paylasimli
+bellekteki GPU girdilerinden; `sysinfo` ekran karti adi vermiyor. CPU adi
+ve yerel IP `sysinfo`'dan. Uculu `mscreen sensors` ciktisinda goruluyor. **`Snapshot` kaynaklar arasinda ortak ve birikimlidir:
 bir kaynagin okuyamadigi deger, baska bir kaynagin okudugunu silmemeli.**
 Yeni sensor kaynagi yazarken `out.alan = self.oku()` degil, okuma
 basariliysa atama yap. `system` kaynagi bu yuzden Afterburner'in CPU

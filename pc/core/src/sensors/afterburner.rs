@@ -62,6 +62,28 @@ mod win {
     const KEY_GPU_MEM_USAGE: &str = "Memory usage";
     const KEY_CPU_TEMP: &str = "CPU temperature";
 
+    /// GPU girdisi icindeki alan sirasi. Hepsi MAX_PATH boyunda:
+    /// `szGpuId`, `szFamily`, `szDevice`, `szDriver`, `szBIOS`, sonra
+    /// `dwMemAmount`. Ekranda gosterilecek ad icin once `szDevice`
+    /// (surucunun bildirdigi tam ad), o bossa `szFamily` kullaniliyor.
+    const GPU_FAMILY_OFFSET: usize = MAX_PATH;
+    const GPU_DEVICE_OFFSET: usize = MAX_PATH * 2;
+    /// Bir GPU girdisinin en az bu kadar olmasi gerekiyor: bes ad alani
+    /// ve bellek miktari.
+    const MIN_GPU_ENTRY_SIZE: usize = MAX_PATH * 5 + 4;
+    const MAX_SANE_GPU_ENTRY_SIZE: usize = 8192;
+    const MAX_SANE_GPUS: usize = 16;
+
+    /// `dwNumGpuEntries` ve `dwGpuEntrySize` icin denenecek baslik
+    /// offsetleri.
+    ///
+    /// **Neden iki aday:** baslikta bu iki alandan once bir `time_t`
+    /// duruyor ve `time_t` derleme secenegine gore 4 ya da 8 bayt.
+    /// Hangisi oldugunu belgeye bakarak kestirmek yerine ikisini de
+    /// deneyip akil saglamasindan gecen ciftti aliyoruz. Ad okumasi
+    /// zaten dogrulaniyor, yanlis cift sessizce cope gidiyor.
+    const GPU_COUNT_OFFSETS: &[(usize, usize)] = &[(24, 28), (28, 32)];
+
     /// Bir olcumun okunamadigini Afterburner bu deger ile bildiriyor.
     const UNKNOWN_VALUE: f32 = -1.0;
 
@@ -165,6 +187,56 @@ mod win {
             sig == SIGNATURE_MAHM
         }
 
+        /// GPU adlari. Afterburner kac ekran karti goruyorsa o kadar.
+        ///
+        /// Girdiler olcum girdilerinden **sonra** duruyor, yani baslangic
+        /// offseti `headerSize + numEntries * entrySize`. Bu hesap
+        /// basliktaki `time_t` belirsizliginden etkilenmiyor; sadece kac
+        /// girdi okunacagi icin baslik yoklaniyor.
+        pub fn gpu_names(&self) -> Vec<String> {
+            if !self.is_live() {
+                return Vec::new();
+            }
+            let header_size = self.read_u32(8) as usize;
+            let num_entries = self.read_u32(12) as usize;
+            let entry_size = self.read_u32(16) as usize;
+            if num_entries == 0 || num_entries > MAX_SANE_ENTRIES || entry_size == 0 {
+                return Vec::new();
+            }
+
+            let Some((count, gpu_entry_size)) = self.gpu_entry_layout() else {
+                return Vec::new();
+            };
+
+            let base = header_size + num_entries * entry_size;
+            let mut out = Vec::with_capacity(count);
+            for i in 0..count {
+                let e = base + i * gpu_entry_size;
+                let device = self.read_cstr(e + GPU_DEVICE_OFFSET, MAX_PATH);
+                let family = self.read_cstr(e + GPU_FAMILY_OFFSET, MAX_PATH);
+                match printable(&device).or_else(|| printable(&family)) {
+                    Some(name) => out.push(name),
+                    None => return out,
+                }
+            }
+            out
+        }
+
+        /// Kac GPU girdisi var ve her biri kac bayt. Akil saglamasindan
+        /// gecen ilk aday offset cifti kazanir, hicbiri gecmezse `None`.
+        fn gpu_entry_layout(&self) -> Option<(usize, usize)> {
+            for (count_off, size_off) in GPU_COUNT_OFFSETS {
+                let count = self.read_u32(*count_off) as usize;
+                let size = self.read_u32(*size_off) as usize;
+                if (1..=MAX_SANE_GPUS).contains(&count)
+                    && (MIN_GPU_ENTRY_SIZE..=MAX_SANE_GPU_ENTRY_SIZE).contains(&size)
+                {
+                    return Some((count, size));
+                }
+            }
+            None
+        }
+
         /// Butun girdileri gezer.
         pub fn entries(&self) -> Vec<Entry> {
             if !self.is_live() {
@@ -238,6 +310,29 @@ mod win {
         pub fn header() -> Option<[u32; 8]> {
             SharedMem::open().map(|m| m.header())
         }
+
+        /// Afterburner'in gordugu GPU adlari. Tanilama komutu kullaniyor.
+        pub fn gpu_names() -> Vec<String> {
+            match SharedMem::open() {
+                Some(m) => m.gpu_names(),
+                None => Vec::new(),
+            }
+        }
+    }
+
+    /// Paylasimli bellekten okunan bir adin gercekten ad olup olmadigi.
+    ///
+    /// Offset tahmini tutmazsa buradan cop gelir. Bos, cok uzun ya da
+    /// basilabilir ASCII disinda karakter iceren metin ad sayilmaz.
+    fn printable(s: &str) -> Option<String> {
+        let t = s.trim();
+        if t.is_empty() || t.len() > 96 {
+            return None;
+        }
+        if t.chars().any(|c| !(' '..='~').contains(&c)) {
+            return None;
+        }
+        Some(t.to_string())
     }
 
     fn mb_to_bytes(mb: f32) -> u64 {
@@ -268,6 +363,14 @@ mod win {
             if !self.mem.is_live() {
                 return;
             }
+
+            // Ad degismiyor ama her turda okumak ucuz ve kart takilip
+            // cikarilma gibi durumlari kendiliginden takip ediyor.
+            // Okunamazsa onceki deger korunuyor.
+            if let Some(name) = self.mem.gpu_names().into_iter().next() {
+                out.gpu_name = Some(name);
+            }
+
             for e in self.mem.entries() {
                 let Some(v) = usable(e.value) else { continue };
                 match e.name.as_str() {
@@ -312,5 +415,9 @@ impl AfterburnerSource {
 
     pub fn header() -> Option<[u32; 8]> {
         None
+    }
+
+    pub fn gpu_names() -> Vec<String> {
+        Vec::new()
     }
 }
